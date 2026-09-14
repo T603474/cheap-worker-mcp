@@ -3,6 +3,7 @@ from collections import Counter
 
 from cheap_worker_verify import (
     Afirmacion, Tramo, Verificada, analizar_respuesta, cifras, componer, normalizar, verificar,
+    verificar_respuesta,
 )
 
 
@@ -40,6 +41,13 @@ class TestAnalizarRespuesta(unittest.TestCase):
     def test_una_linea_de_continuacion_se_suma_a_la_afirmacion(self):
         texto = "- hecho que sigue\n  en otra línea\n  > la cita del hecho"
         self.assertEqual(analizar_respuesta(texto)[0].texto, "hecho que sigue en otra línea")
+
+    def test_una_linea_numerada_indentada_no_abre_afirmacion_nueva(self):
+        texto = "- El plazo es 30 días\n  2024. seguimos\n> El plazo es de 30 días"
+        afirmaciones = analizar_respuesta(texto)
+        self.assertEqual(len(afirmaciones), 1)
+        self.assertTrue(afirmaciones[0].texto.startswith("El plazo es 30 días"))
+        self.assertEqual(afirmaciones[0].cita, "El plazo es de 30 días")
 
 
 class TestNormalizarYCifras(unittest.TestCase):
@@ -90,6 +98,10 @@ class TestVerificar(unittest.TestCase):
     def test_puntos_suspensivos_en_los_extremos_se_ignoran(self):
         verificadas, _ = self.verificar_una("Leyes", "...son leyes orgánicas las relativas…")
         self.assertEqual(len(verificadas), 1)
+
+    def test_la_cita_mostrada_no_lleva_puntos_suspensivos_en_los_extremos(self):
+        verificadas, _ = self.verificar_una("Leyes", "...son leyes orgánicas las relativas…")
+        self.assertEqual(verificadas[0].cita, "son leyes orgánicas las relativas")
 
     def test_cifra_inventada_sobre_cita_real_se_descarta(self):
         verificadas, descartes = self.verificar_una("El plazo es de 45 días", "El plazo será de treinta días")
@@ -156,6 +168,30 @@ class TestVerificar(unittest.TestCase):
         self.assertEqual(verificadas[0].posicion, (1, 1))
 
 
+class TestVerificarRespuesta(unittest.TestCase):
+    LINEAS = TestVerificar.LINEAS
+
+    def test_respuesta_en_prosa_sin_vinetas_se_descarta_como_sin_formato(self):
+        texto = "El artículo 81 dice que son leyes orgánicas las relativas al desarrollo."
+        verificadas, descartes = verificar_respuesta(texto, [tramo(self.LINEAS)])
+        self.assertEqual(verificadas, [])
+        self.assertEqual(descartes, Counter({"sin_formato": 1}))
+
+    def test_no_consta_no_cuenta_como_sin_formato(self):
+        verificadas, descartes = verificar_respuesta("NO CONSTA", [tramo(self.LINEAS)])
+        self.assertEqual((verificadas, descartes), ([], Counter()))
+
+    def test_respuesta_vacia_no_cuenta_como_sin_formato(self):
+        verificadas, descartes = verificar_respuesta("   \n  ", [tramo(self.LINEAS)])
+        self.assertEqual((verificadas, descartes), ([], Counter()))
+
+    def test_respuesta_con_vinetas_no_cuenta_como_sin_formato(self):
+        texto = "- Leyes orgánicas\n  > son leyes orgánicas las relativas"
+        verificadas, descartes = verificar_respuesta(texto, [tramo(self.LINEAS)])
+        self.assertEqual(len(verificadas), 1)
+        self.assertEqual(descartes, Counter())
+
+
 class TestComponer(unittest.TestCase):
     def v(self, texto, cita, ubicacion="línea 3", ruta="doc.md", posicion=(0, 2)):
         return Verificada(texto, cita, ruta, ubicacion, posicion)
@@ -187,6 +223,22 @@ class TestComponer(unittest.TestCase):
     def test_descarte_en_singular(self):
         resultado = componer([], Counter({"sin_cita": 1}), [])
         self.assertTrue(resultado.endswith("Descartada 1 afirmación: 1 sin cita."))
+
+    def test_sin_formato_produce_una_frase_separada_en_singular(self):
+        resultado = componer([], Counter({"sin_formato": 1}), [])
+        self.assertEqual(resultado, "No consta en los documentos.\n\n1 respuesta sin el formato pedido.")
+
+    def test_sin_formato_produce_una_frase_separada_en_plural(self):
+        resultado = componer([], Counter({"sin_formato": 2}), [])
+        self.assertEqual(resultado, "No consta en los documentos.\n\n2 respuestas sin el formato pedido.")
+
+    def test_sin_formato_no_se_mezcla_con_los_descartes_de_afirmaciones(self):
+        resultado = componer([], Counter({"sin_formato": 1, "sin_cita": 1}), [])
+        self.assertEqual(resultado, (
+            "No consta en los documentos.\n\n"
+            "Descartada 1 afirmación: 1 sin cita.\n\n"
+            "1 respuesta sin el formato pedido."
+        ))
 
     def test_lista_los_archivos_no_leidos(self):
         resultado = componer([self.v("Hecho", "cita literal aquí")], Counter(),

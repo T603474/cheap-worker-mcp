@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Mapping, Optional
 
 from cheap_worker_extract import ExtraccionError, extraer
-from cheap_worker_verify import Tramo, analizar_respuesta, componer, verificar
+from cheap_worker_verify import Tramo, componer, verificar_respuesta
 
 DEFAULT_API_BASE = "http://localhost:11434/v1"
 DEFAULT_MODEL = "qwen2.5-coder:7b"
@@ -466,7 +466,7 @@ def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
     descartes = Counter()
     for bloque in troceado.blocks:
         respuesta = backend.chat(perfil, SYSTEM_BULK, f"Question: {question}\n\nFiles:\n{bloque.texto}")
-        buenas, malas = verificar(analizar_respuesta(respuesta), bloque.tramos)
+        buenas, malas = verificar_respuesta(respuesta, bloque.tramos)
         verificadas.extend(buenas)
         descartes.update(malas)
 

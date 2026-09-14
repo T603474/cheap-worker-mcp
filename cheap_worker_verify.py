@@ -18,6 +18,7 @@ MIN_PALABRAS_CITA = 3
 
 # El orden de este diccionario es el orden en que se listan los descartes.
 MOTIVOS = {
+    "sin_formato": "respuestas sin el formato pedido",
     "sin_cita": "sin cita",
     "cita_corta": f"con cita de menos de {MIN_PALABRAS_CITA} palabras",
     "cita_no_encontrada": "con cita no encontrada en el documento",
@@ -26,7 +27,10 @@ MOTIVOS = {
 
 _MARCAS = str.maketrans({c: " " for c in "*_`\"“”«»‘’"})
 _CIFRA = re.compile(r"\d+(?:[.,]\d+)*")
-_VINETA = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
+_VINETA_SIMBOLO = re.compile(r"^\s*[-*•]\s+")
+# Una viñeta numerada solo abre afirmación nueva si no está indentada: una
+# línea de continuación como "  2024. seguimos" no debe leerse como ítem 2024.
+_VINETA_NUMERADA = re.compile(r"^\d+[.)]\s+")
 
 
 @dataclass(frozen=True)
@@ -77,7 +81,7 @@ def analizar_respuesta(texto: str) -> list:
             if actual is not None:
                 citas.append(limpia.lstrip(">").strip())
             continue
-        vineta = _VINETA.match(linea)
+        vineta = _VINETA_SIMBOLO.match(linea) or _VINETA_NUMERADA.match(linea)
         if vineta:
             if actual is not None:
                 afirmaciones.append(Afirmacion(actual.strip(), " ".join(citas).strip()))
@@ -147,10 +151,28 @@ def verificar(afirmaciones, tramos):
             descartes["cifras_no_respaldadas"] += 1
             continue
         tramo, linea = hallada
+        cita_mostrada = afirmacion.cita.strip().strip(".…").strip()
         verificadas.append(Verificada(
-            afirmacion.texto, afirmacion.cita.strip(), tramo.ruta,
+            afirmacion.texto, cita_mostrada, tramo.ruta,
             tramo.ubicaciones[linea], (tramo.orden, tramo.primera + linea),
         ))
+    return verificadas, descartes
+
+
+def verificar_respuesta(texto, tramos):
+    """Analiza y verifica una respuesta completa del modelo (un chunk).
+
+    Añade el descarte `sin_formato` cuando la respuesta no está vacía, no es
+    "NO CONSTA" y no tiene ninguna afirmación con el formato viñeta + cita:
+    una respuesta en prosa no debe confundirse con "No consta en los
+    documentos.", que es lo que se compone cuando no hay afirmaciones.
+    """
+    afirmaciones = analizar_respuesta(texto)
+    verificadas, descartes = verificar(afirmaciones, tramos)
+    if not afirmaciones:
+        limpio = texto.strip()
+        if limpio and normalizar(limpio) != "no consta":
+            descartes = descartes + Counter({"sin_formato": 1})
     return verificadas, descartes
 
 
@@ -167,11 +189,18 @@ def componer(verificadas, descartes, no_leidos) -> str:
     else:
         secciones.append("No consta en los documentos.")
 
-    total = sum(descartes.values())
+    total = sum(v for m, v in descartes.items() if m != "sin_formato")
     if total:
-        detalle = ", ".join(f"{descartes[m]} {texto}" for m, texto in MOTIVOS.items() if descartes[m])
+        detalle = ", ".join(
+            f"{descartes[m]} {texto}" for m, texto in MOTIVOS.items() if m != "sin_formato" and descartes[m]
+        )
         cabecera = "Descartada 1 afirmación" if total == 1 else f"Descartadas {total} afirmaciones"
         secciones.append(f"{cabecera}: {detalle}.")
+
+    sin_formato = descartes.get("sin_formato", 0)
+    if sin_formato:
+        palabra = "respuesta" if sin_formato == 1 else "respuestas"
+        secciones.append(f"{sin_formato} {palabra} sin el formato pedido.")
 
     if no_leidos:
         secciones.append("Archivos no leídos:\n" + "\n".join(f"- {r}: {m}" for r, m in no_leidos))

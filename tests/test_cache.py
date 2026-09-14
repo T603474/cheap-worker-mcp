@@ -90,8 +90,9 @@ class TestCache(unittest.TestCase):
 
     def test_la_cache_no_crece_sin_techo(self):
         cfg = self._cfg(SHUNT_CACHE_MAX="3")
+        etiquetas = "abcdef"
         for i in range(6):
-            bulk_read(cfg, "pregunta %d" % i, [self.archivo], backend=BackendFalso([respuesta("r%d" % i)]))
+            bulk_read(cfg, "pregunta %d" % i, [self.archivo], backend=BackendFalso([respuesta("r" + etiquetas[i])]))
         entradas = [n for n in os.listdir(self.cache) if n.endswith(".txt")]
         self.assertLessEqual(len(entradas), 3)
 

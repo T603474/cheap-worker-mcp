@@ -53,9 +53,16 @@ def descartadas(resultado):
 def acierta(caso, resultado):
     verificada = parte_verificada(resultado)
     if caso["tipo"] == "sin_respuesta":
+        if "sin el formato pedido" in resultado:
+            return False
         return verificada.startswith("No consta")
     texto = normalizar(verificada)
     return all(normalizar(f) in texto for f in caso["esperado"])
+
+
+def sin_formato(resultado):
+    m = re.search(r"(\d+) respuestas? sin el formato pedido", resultado)
+    return int(m.group(1)) if m else 0
 
 
 def evaluar(modelo, casos, salida):
@@ -78,7 +85,7 @@ def evaluar(modelo, casos, salida):
         ok = error is None and acierta(caso, resultado)
         filas.append({"tipo": caso["tipo"], "ok": ok, "segundos": segundos,
                       "llamadas": backend.llamadas, "descartadas": descartadas(resultado),
-                      "error": error})
+                      "sin_formato": sin_formato(resultado), "error": error})
         marca = "OK" if ok else "--"
         aviso = f"  ERROR: {error}" if error else ""
         print(f"  [{marca}] {caso['tipo']:13} {segundos:6.1f}s {backend.llamadas:2} llamadas  "
@@ -102,9 +109,10 @@ def resumen(modelo, filas):
     tiempo = sum(f["segundos"] for f in filas)
     llamadas = sum(f["llamadas"] for f in filas)
     descartes = sum(f["descartadas"] for f in filas)
+    sin_formatos = sum(f["sin_formato"] for f in filas)
     errores = sum(1 for f in filas if f["error"])
-    return (f"{modelo:22} {aciertos} | descartadas {descartes} | errores {errores} | "
-            f"{tiempo:.0f}s en {llamadas} llamadas")
+    return (f"{modelo:22} {aciertos} | descartadas {descartes} | sin_formato {sin_formatos} | "
+            f"errores {errores} | {tiempo:.0f}s en {llamadas} llamadas")
 
 
 def main(argv=None):

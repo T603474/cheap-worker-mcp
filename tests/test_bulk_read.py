@@ -39,6 +39,15 @@ class TestBulkRead(unittest.TestCase):
         self.assertTrue(resultado.startswith("No consta en los documentos."))
         self.assertIn("Descartada 1 afirmación", resultado)
 
+    def test_respuesta_en_prosa_se_descarta_como_sin_formato_no_como_no_consta(self):
+        path = self._write("a.md", "Las leyes orgánicas requieren mayoría absoluta del Congreso.\n")
+        backend = BackendFalso(["Las leyes orgánicas requieren mayoría absoluta del Congreso, según el texto."])
+        resultado = bulk_read(self.cfg, "¿Qué mayoría?", [path], backend=backend)
+        self.assertEqual(resultado, (
+            "No consta en los documentos.\n\n"
+            "1 respuesta sin el formato pedido."
+        ))
+
     def test_no_consta_del_modelo_llega_como_no_consta(self):
         path = self._write("a.md", "texto sin relación\n")
         resultado = bulk_read(self.cfg, "¿Plazo?", [path], backend=BackendFalso(["NO CONSTA"]))
