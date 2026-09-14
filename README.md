@@ -23,10 +23,28 @@ Dos herramientas:
 
 | Herramienta | Qué recibe | Qué devuelve |
 |---|---|---|
-| `bulk_read` | una pregunta y una lista de rutas | bullets con la respuesta |
+| `bulk_read` | una pregunta y una lista de rutas | afirmaciones con cita verificada |
 | `code_write` | una especificación y un archivo de referencia | la ruta del archivo escrito |
 
 En `code_write`, con `target`, el código generado **no vuelve**: solo la ruta y el número de líneas. Ahí está el ahorro.
+
+## Qué lee `bulk_read` y qué garantiza
+
+Lee código y documentos: texto, Markdown, CSV, JSON, **PDF**, **Word (`.docx`)**, **OpenDocument (`.odt`)** y **HTML**. Para PDF hace falta `pypdf` (`python -m pip install pypdf`); sin ella funciona todo lo demás. Los PDF escaneados no tienen texto y se rechazan con ese motivo: no hay OCR.
+
+Cada afirmación de la respuesta trae una cita literal y dónde está:
+
+    - Las leyes orgánicas requieren mayoría absoluta del Congreso
+      > requerirá mayoría absoluta del Congreso, en una votación final
+      (CE.md:línea 812)
+
+    Descartadas 2 afirmaciones: 1 con cita no encontrada en el documento, 1 con cifras que no están en su cita.
+
+El servidor comprueba cada cita contra el archivo y descarta lo que no encuentra. También descarta la afirmación cuyas cifras no aparecen en su cita: es el caso de citar un texto auténtico y adjuntarle un número inventado. Si no queda nada, responde `No consta en los documentos.`
+
+**Lo que no garantiza:** una cita real con una conclusión equivocada pasa la verificación, y las cifras escritas con palabras ("tres quintos") no las cubre el filtro de cifras. Un resumen de un modelo pequeño no sustituye a leer: para extraer datos que importan, lee el documento.
+
+Ubicaciones: `línea N` en texto, código y HTML; `p. N` en PDF; `párrafo N` en Word y OpenDocument.
 
 ## Ahorro medido
 
@@ -285,6 +303,10 @@ La calidad del 3B resumiendo aguanta bien: cubre las mismas responsabilidades qu
 **`Valor no numérico en una variable SHUNT_*`** — errata en la sección `env` de `.mcp.json`.
 
 **Resúmenes que ignoran parte del archivo** — `SHUNT_MAX_CTX_TOKENS` es mayor que la ventana que el backend sirve de verdad, y está recortando en silencio. Compruébala con `ollama ps`, columna `CONTEXT`. El endpoint OpenAI-compatible de Ollama no admite `num_ctx` por petición: para ampliarla hay que fijarla en un Modelfile y publicar una variante.
+
+**`No consta` con muchas afirmaciones descartadas** — el modelo no copia las citas literalmente, o parafrasea. Compara modelos con `eval-bulk-read.py`.
+
+**`hace falta la librería pypdf`** — `python -m pip install pypdf` en el mismo Python que arranca el servidor.
 
 ## Documentos
 

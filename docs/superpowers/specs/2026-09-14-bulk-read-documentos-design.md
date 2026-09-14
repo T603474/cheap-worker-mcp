@@ -72,7 +72,7 @@ Con varios archivos, los que fallan se listan al final con su motivo y el resto 
 
 ## 5. Qué devuelve el modelo
 
-`SYSTEM_BULK` se reescribe: válido para código y prosa, responde en el idioma del documento, y por cada afirmación da una cita literal copiada del texto:
+`SYSTEM_BULK` se reescribe: válido para código y prosa, responde en el idioma de la pregunta (con código en inglés y pregunta en español, la respuesta útil es en español), y por cada afirmación da una cita literal copiada del texto:
 
 ```
 - Las leyes orgánicas requieren mayoría absoluta del Congreso
