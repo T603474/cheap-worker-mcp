@@ -49,6 +49,12 @@ class TestNormalizarYCifras(unittest.TestCase):
     def test_cifras_con_separadores(self):
         self.assertEqual(cifras("30 días y 1.500 euros, art. 81."), {"30", "1.500", "81"})
 
+    def test_normalizar_quita_comillas_tipograficas(self):
+        self.assertEqual(
+            normalizar("“mayoría absoluta” y ‘otra’"),
+            "mayoría absoluta y otra",
+        )
+
 
 class TestVerificar(unittest.TestCase):
     LINEAS = [
@@ -105,6 +111,18 @@ class TestVerificar(unittest.TestCase):
     def test_una_vineta_no_consta_se_ignora_sin_contar(self):
         verificadas, descartes = self.verificar_una("NO CONSTA", "")
         self.assertEqual((verificadas, descartes), ([], Counter()))
+
+    def test_cita_no_puede_coincidir_en_mitad_de_una_palabra_numerica(self):
+        tramos = [tramo(["los derechos 50 del texto"])]
+        verificadas, descartes = self.verificar_una("Hay 5", "los derechos 5", tramos)
+        self.assertEqual(verificadas, [])
+        self.assertEqual(descartes, Counter({"cita_no_encontrada": 1}))
+
+    def test_cita_no_puede_coincidir_en_mitad_de_una_palabra(self):
+        tramos = [tramo(["abcde los derechos fundamentales"])]
+        verificadas, descartes = self.verificar_una("Hecho", "de los derechos", tramos)
+        self.assertEqual(verificadas, [])
+        self.assertEqual(descartes, Counter({"cita_no_encontrada": 1}))
 
     def test_busca_en_todos_los_tramos_del_bloque(self):
         tramos = [tramo(["nada que ver aquí"], ruta="a.md"),

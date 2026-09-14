@@ -24,7 +24,7 @@ MOTIVOS = {
     "cifras_no_respaldadas": "con cifras que no están en su cita",
 }
 
-_MARCAS = str.maketrans({c: " " for c in "*_`\"""«»''"})
+_MARCAS = str.maketrans({c: " " for c in "*_`\"“”«»‘’"})
 _CIFRA = re.compile(r"\d+(?:[.,]\d+)*")
 _VINETA = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
 
@@ -125,10 +125,16 @@ def verificar(afirmaciones, tramos):
         if len(cita.split()) < MIN_PALABRAS_CITA:
             descartes["cita_corta"] += 1
             continue
+        patron = re.compile(
+            ("(?<!\\w)" if cita[0].isalnum() else "")
+            + re.escape(cita)
+            + ("(?!\\w)" if cita[-1].isalnum() else "")
+        )
         hallada = None
         for tramo, texto, inicios in indices:
-            donde = texto.find(cita)
-            if donde != -1:
+            match = patron.search(texto)
+            if match is not None:
+                donde = match.start()
                 linea = max(i for inicio, i in inicios if inicio <= donde)
                 hallada = (tramo, linea)
                 break
