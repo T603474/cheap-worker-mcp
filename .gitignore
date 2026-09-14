@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+
+# Artefactos que genera test-mcp-ollama.ps1
+test_large.py
+test_ref.py
+generated_*.py
+
+# Scratch del flujo de subagentes
+.superpowers/
+
+# Cache de resumenes del cheap worker
+.cache/

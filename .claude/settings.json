@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR:-.}/hooks/bloquear-lectura-grande.py\"",
+            "timeout": 10,
+            "statusMessage": "Comprobando el umbral del cheap worker..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR:-.}/hooks/bloquear-lectura-grande.py\"",
+            "timeout": 10,
+            "statusMessage": "Comprobando el umbral del cheap worker..."
+          }
+        ]
+      }
+    ]
+  }
+}
