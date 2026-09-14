@@ -168,7 +168,36 @@ def _extraer_html(ruta):
     return _numeradas(lineas, "línea")
 
 
+def _extraer_pdf(ruta):
+    try:
+        import pypdf
+    except ImportError:
+        raise ExtraccionError(
+            "hace falta la librería pypdf para leer PDF: python -m pip install pypdf"
+        )
+    try:
+        lector = pypdf.PdfReader(ruta)
+        if lector.is_encrypted:
+            raise ExtraccionError("está cifrado")
+        lineas, ubicaciones = [], []
+        for numero, pagina in enumerate(lector.pages, start=1):
+            for linea in (pagina.extract_text() or "").splitlines():
+                if linea.strip():
+                    lineas.append(linea)
+                    ubicaciones.append(f"p. {numero}")
+    except ExtraccionError:
+        raise
+    except Exception as e:
+        # pypdf lanza una variedad amplia ante archivos dañados; al usuario le
+        # basta saber que este no se puede leer.
+        raise ExtraccionError(f"no es un PDF válido ({type(e).__name__})")
+    if not lineas:
+        raise ExtraccionError("no tiene texto extraíble; ¿es un escaneo?")
+    return Documento(lineas, ubicaciones)
+
+
 _LECTORES = {
+    ".pdf": _extraer_pdf,
     ".docx": _extraer_docx,
     ".odt": _extraer_odt,
     ".html": _extraer_html,

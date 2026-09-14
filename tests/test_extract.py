@@ -1,9 +1,18 @@
+import io
 import os
+import sys
 import tempfile
 import unittest
 import zipfile
+from unittest import mock
 
 from cheap_worker_extract import Documento, ExtraccionError, extraer
+from tests.helpers import pdf_minimo
+
+try:
+    import pypdf
+except ImportError:
+    pypdf = None
 
 DOCX_XML = (
     '<?xml version="1.0" encoding="UTF-8"?>'
@@ -115,6 +124,47 @@ class TestHTML(Base):
     def test_htm_tambien(self):
         ruta = self.escribir("a.htm", "<p>uno</p><p>dos</p>")
         self.assertEqual(extraer(ruta).lineas, ["uno", "dos"])
+
+
+class TestPDF(Base):
+    def escribir_pdf(self, nombre, paginas):
+        return self.escribir(nombre, pdf_minimo(paginas))
+
+    @unittest.skipUnless(pypdf, "pypdf no instalado")
+    def test_extrae_las_lineas_con_su_pagina(self):
+        ruta = self.escribir_pdf("a.pdf", [["Articulo 81", "Leyes organicas"], ["Plazo de 30 dias"]])
+        doc = extraer(ruta)
+        self.assertEqual(doc.lineas, ["Articulo 81", "Leyes organicas", "Plazo de 30 dias"])
+        self.assertEqual(doc.ubicaciones, ["p. 1", "p. 1", "p. 2"])
+
+    @unittest.skipUnless(pypdf, "pypdf no instalado")
+    def test_un_pdf_sin_texto_sugiere_que_es_un_escaneo(self):
+        ruta = self.escribir_pdf("escaneo.pdf", [[]])
+        with self.assertRaisesRegex(ExtraccionError, "escaneo"):
+            extraer(ruta)
+
+    @unittest.skipUnless(pypdf, "pypdf no instalado")
+    def test_un_pdf_corrupto_da_el_motivo(self):
+        ruta = self.escribir("roto.pdf", "no soy un pdf")
+        with self.assertRaisesRegex(ExtraccionError, "no es un PDF válido"):
+            extraer(ruta)
+
+    @unittest.skipUnless(pypdf, "pypdf no instalado")
+    def test_un_pdf_cifrado_da_el_motivo(self):
+        escritor = pypdf.PdfWriter()
+        escritor.add_blank_page(width=612, height=792)
+        escritor.encrypt("clave", algorithm="RC4-40")
+        buffer = io.BytesIO()
+        escritor.write(buffer)
+        ruta = self.escribir("cifrado.pdf", buffer.getvalue())
+        with self.assertRaisesRegex(ExtraccionError, "cifrado"):
+            extraer(ruta)
+
+    def test_sin_pypdf_explica_como_instalarlo(self):
+        ruta = self.escribir("a.pdf", pdf_minimo([["hola"]]))
+        with mock.patch.dict(sys.modules, {"pypdf": None}):
+            with self.assertRaisesRegex(ExtraccionError, "pip install pypdf"):
+                extraer(ruta)
 
 
 if __name__ == "__main__":
