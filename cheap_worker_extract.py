@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""Extracción de texto: convierte cada archivo en líneas con su ubicación.
+
+El troceado y la verificación trabajan siempre sobre este texto, sea cual sea
+el formato de origen. Antes, cualquier archivo se abría como UTF-8 sustituyendo
+lo ilegible: un PDF llegaba al modelo como bytes sin sentido y el modelo
+devolvía un resumen igualmente.
+"""
+
+import os
+import zipfile
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from html.parser import HTMLParser
+
+
+class ExtraccionError(Exception):
+    """El archivo no se puede convertir en texto. El mensaje es el motivo."""
+
+
+@dataclass(frozen=True)
+class Documento:
+    lineas: list
+    ubicaciones: list
+
+
+# Bytes que se miran para decidir si un formato no reconocido es binario.
+_BYTES_SONDA = 8192
+
+_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_TEXT = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
+
+
+def extraer(ruta: str) -> Documento:
+    """Texto del archivo, línea a línea, con la ubicación de cada línea."""
+    if not os.path.isfile(ruta):
+        raise ExtraccionError("no existe")
+    extension = os.path.splitext(ruta)[1].lower()
+    return _LECTORES.get(extension, _extraer_texto)(ruta)
+
+
+def _numeradas(lineas, etiqueta):
+    return Documento(list(lineas), [f"{etiqueta} {n}" for n in range(1, len(lineas) + 1)])
+
+
+def _extraer_texto(ruta):
+    try:
+        with open(ruta, "rb") as f:
+            datos = f.read()
+    except OSError as e:
+        raise ExtraccionError(f"no se puede abrir: {e.strerror or e}")
+    if b"\0" in datos[:_BYTES_SONDA]:
+        raise ExtraccionError("formato binario no soportado")
+    return _numeradas(datos.decode("utf-8", errors="replace").splitlines(), "línea")
+
+
+def _parrafos(textos):
+    """Párrafos no vacíos, con los espacios colapsados, numerados."""
+    lineas = [t for t in (" ".join(texto.split()) for texto in textos) if t]
+    return _numeradas(lineas, "párrafo")
+
+
+def _xml_de_zip(ruta, miembro):
+    try:
+        with zipfile.ZipFile(ruta) as z:
+            return ET.fromstring(z.read(miembro))
+    except (zipfile.BadZipFile, KeyError, ET.ParseError, OSError):
+        raise ExtraccionError("no es un documento válido")
+
+
+def _bloques(nodo, es_bloque, texto_de):
+    """Texto de cada bloque, en orden de documento.
+
+    No desciende dentro de un bloque ya recogido: una nota dentro de un párrafo
+    sale con su párrafo, no dos veces.
+    """
+    for hijo in nodo:
+        if es_bloque(hijo):
+            yield texto_de(hijo)
+        else:
+            yield from _bloques(hijo, es_bloque, texto_de)
+
+
+def _texto_docx(parrafo):
+    partes = []
+    for e in parrafo.iter():
+        if e.tag == _W + "t" and e.text:
+            partes.append(e.text)
+        elif e.tag in (_W + "tab", _W + "br"):
+            partes.append(" ")
+    return "".join(partes)
+
+
+def _extraer_docx(ruta):
+    raiz = _xml_de_zip(ruta, "word/document.xml")
+    return _parrafos(_bloques(raiz, lambda e: e.tag == _W + "p", _texto_docx))
+
+
+def _texto_odt(parrafo):
+    partes = []
+
+    def recorrer(elemento):
+        if elemento.text:
+            partes.append(elemento.text)
+        for hijo in elemento:
+            if hijo.tag == _TEXT + "s":
+                partes.append(" " * int(hijo.get(_TEXT + "c", "1")))
+            elif hijo.tag in (_TEXT + "tab", _TEXT + "line-break"):
+                partes.append(" ")
+            else:
+                recorrer(hijo)
+            if hijo.tail:
+                partes.append(hijo.tail)
+
+    recorrer(parrafo)
+    return "".join(partes)
+
+
+def _extraer_odt(ruta):
+    raiz = _xml_de_zip(ruta, "content.xml")
+    return _parrafos(_bloques(raiz, lambda e: e.tag in (_TEXT + "p", _TEXT + "h"), _texto_odt))
+
+
+_BLOQUES_HTML = {
+    "p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "section",
+    "article", "header", "footer", "table", "ul", "ol", "blockquote", "pre", "dt",
+    "dd", "hr", "title",
+}
+_CELDAS_HTML = {"td", "th"}
+_OMITIDOS_HTML = {"script", "style"}
+
+
+class _TextoHTML(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.partes = []
+        self._omitiendo = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in _OMITIDOS_HTML:
+            self._omitiendo += 1
+        elif tag in _BLOQUES_HTML:
+            self.partes.append("\n")
+        elif tag in _CELDAS_HTML:
+            self.partes.append(" ")
+
+    def handle_endtag(self, tag):
+        if tag in _OMITIDOS_HTML:
+            self._omitiendo = max(0, self._omitiendo - 1)
+        elif tag in _BLOQUES_HTML:
+            self.partes.append("\n")
+
+    def handle_data(self, data):
+        if not self._omitiendo:
+            self.partes.append(data)
+
+
+def _extraer_html(ruta):
+    fuente = _extraer_texto(ruta)
+    lector = _TextoHTML()
+    lector.feed("\n".join(fuente.lineas))
+    lector.close()
+    lineas = [
+        limpia
+        for limpia in (" ".join(l.split()) for l in "".join(lector.partes).split("\n"))
+        if limpia
+    ]
+    return _numeradas(lineas, "línea")
+
+
+_LECTORES = {
+    ".docx": _extraer_docx,
+    ".odt": _extraer_odt,
+    ".html": _extraer_html,
+    ".htm": _extraer_html,
+}
