@@ -124,6 +124,30 @@ class TestVerificar(unittest.TestCase):
         self.assertEqual(verificadas, [])
         self.assertEqual(descartes, Counter({"cita_no_encontrada": 1}))
 
+    def test_cita_no_puede_cortar_una_cifra_con_separador_de_miles_al_final(self):
+        tramos = [tramo(["la multa de 1.500 euros"])]
+        verificadas, descartes = self.verificar_una("Multa de 1 euro", "la multa de 1", tramos)
+        self.assertEqual(verificadas, [])
+        self.assertEqual(descartes, Counter({"cita_no_encontrada": 1}))
+
+    def test_cita_no_puede_empezar_en_mitad_de_una_cifra_con_separador_de_miles(self):
+        tramos = [tramo(["coste total de 1.500 euros al año"])]
+        verificadas, descartes = self.verificar_una("Son 500 euros", "500 euros al año", tramos)
+        self.assertEqual(verificadas, [])
+        self.assertEqual(descartes, Counter({"cita_no_encontrada": 1}))
+
+    def test_cita_no_puede_cortar_una_cifra_con_separador_decimal(self):
+        tramos = [tramo(["el tipo es 1,5 puntos"])]
+        verificadas, descartes = self.verificar_una("Tipo 1", "el tipo es 1", tramos)
+        self.assertEqual(verificadas, [])
+        self.assertEqual(descartes, Counter({"cita_no_encontrada": 1}))
+
+    def test_cita_con_cifra_completa_se_acepta(self):
+        tramos = [tramo(["la multa de 1.500 euros"])]
+        verificadas, descartes = self.verificar_una("Multa de 1.500 euros", "la multa de 1.500 euros", tramos)
+        self.assertEqual(len(verificadas), 1)
+        self.assertEqual(descartes, Counter())
+
     def test_busca_en_todos_los_tramos_del_bloque(self):
         tramos = [tramo(["nada que ver aquí"], ruta="a.md"),
                   tramo(["x", "la cita correcta está aquí"], ruta="b.md", orden=1)]

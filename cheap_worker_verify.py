@@ -127,8 +127,10 @@ def verificar(afirmaciones, tramos):
             continue
         patron = re.compile(
             ("(?<!\\w)" if cita[0].isalnum() else "")
+            + ("(?<!\\d[.,])" if cita[0].isdigit() else "")
             + re.escape(cita)
             + ("(?!\\w)" if cita[-1].isalnum() else "")
+            + ("(?![.,]\\d)" if cita[-1].isdigit() else "")
         )
         hallada = None
         for tramo, texto, inicios in indices:
