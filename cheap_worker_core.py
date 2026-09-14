@@ -471,7 +471,10 @@ def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
         descartes.update(malas)
 
     resultado = componer(verificadas, descartes, troceado.missing)
-    _cache_escribir(cfg, clave, resultado)
+    # Un fallo de formato es un tropiezo puntual del modelo, no una propiedad
+    # estable del archivo: cachearlo repetiría el mismo hueco en cada lectura.
+    if not descartes["sin_formato"]:
+        _cache_escribir(cfg, clave, resultado)
     return resultado
 
 

@@ -102,6 +102,12 @@ class TestCache(unittest.TestCase):
         resultado = bulk_read(cfg, "q", [self.archivo], backend=BackendFalso([respuesta("vale")]))
         self.assertIn("- vale", resultado)
 
+    def test_una_respuesta_sin_formato_no_se_cachea(self):
+        cfg = self._cfg()
+        bulk_read(cfg, "q", [self.archivo], backend=BackendFalso(["esto es prosa, sin viñetas ni cita"]))
+        segunda = bulk_read(cfg, "q", [self.archivo], backend=BackendFalso([respuesta("valida")]))
+        self.assertIn("- valida", segunda)
+
     def test_los_archivos_que_faltan_entran_en_la_clave(self):
         cfg = self._cfg()
         fantasma = os.path.join(self.dir.name, "fantasma.py")

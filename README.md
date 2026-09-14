@@ -56,6 +56,8 @@ Sobre `cheap_worker_core.py`, 473 líneas, con `qwen2.5-coder:7b`:
 | Lo que recibe en su lugar (afirmaciones con cita) | 415 |
 | **Ahorro** | **3764 (90%)** |
 
+*Medido antes del cambio a verificación de citas, con el resumen y la llamada de fusión de entonces; pendiente de remedir con el flujo actual.*
+
 ## Instalación
 
 En cualquier equipo, tras clonar el repositorio:
@@ -275,6 +277,8 @@ Ese segundo punto es el ajuste más rentable, y es gratis. Medido sobre `cheap_w
 |---|---|---|---|
 | 4096 | 2 | 3 | 414 s |
 | 8192 | 1 | 1 | **126 s** |
+
+*Medido antes del cambio a verificación de citas: la tercera llamada con 4096 era la de fusión (reduce), que ya no existe — ahora la composición es en código. Pendiente de remedir con el flujo actual.*
 
 **3.3× más rápido**, y 8192 era lo que Ollama ya estaba sirviendo. Comprueba el tuyo con `ollama ps`, columna `CONTEXT`, y pon ese número. Pasarse es peor que quedarse corto: Ollama recorta en silencio.
 

@@ -124,6 +124,10 @@ class TestVerificar(unittest.TestCase):
         verificadas, descartes = self.verificar_una("NO CONSTA", "")
         self.assertEqual((verificadas, descartes), ([], Counter()))
 
+    def test_no_consta_con_punto_final_se_ignora_sin_contar(self):
+        verificadas, descartes = self.verificar_una("No consta.", "")
+        self.assertEqual((verificadas, descartes), ([], Counter()))
+
     def test_cita_no_puede_coincidir_en_mitad_de_una_palabra_numerica(self):
         tramos = [tramo(["los derechos 50 del texto"])]
         verificadas, descartes = self.verificar_una("Hay 5", "los derechos 5", tramos)
@@ -179,6 +183,14 @@ class TestVerificarRespuesta(unittest.TestCase):
 
     def test_no_consta_no_cuenta_como_sin_formato(self):
         verificadas, descartes = verificar_respuesta("NO CONSTA", [tramo(self.LINEAS)])
+        self.assertEqual((verificadas, descartes), ([], Counter()))
+
+    def test_no_consta_con_punto_final_no_cuenta_como_sin_formato(self):
+        verificadas, descartes = verificar_respuesta("NO CONSTA.", [tramo(self.LINEAS)])
+        self.assertEqual((verificadas, descartes), ([], Counter()))
+
+    def test_no_consta_minuscula_con_punto_no_cuenta_como_sin_formato(self):
+        verificadas, descartes = verificar_respuesta("No consta.", [tramo(self.LINEAS)])
         self.assertEqual((verificadas, descartes), ([], Counter()))
 
     def test_respuesta_vacia_no_cuenta_como_sin_formato(self):

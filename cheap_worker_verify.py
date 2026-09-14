@@ -68,6 +68,11 @@ def cifras(texto: str) -> set:
     return set(_CIFRA.findall(texto))
 
 
+def _es_no_consta(texto: str) -> bool:
+    """"NO CONSTA", con o sin puntuación final (".", "…", ":", ";", "!", "¡")."""
+    return normalizar(texto).strip(" .…:;!¡") == "no consta"
+
+
 def analizar_respuesta(texto: str) -> list:
     """Afirmaciones de una respuesta con formato viñeta + cita (`-` y `>`)."""
     afirmaciones = []
@@ -120,7 +125,7 @@ def verificar(afirmaciones, tramos):
     verificadas = []
     descartes = Counter()
     for afirmacion in afirmaciones:
-        if normalizar(afirmacion.texto) == "no consta":
+        if _es_no_consta(afirmacion.texto):
             continue
         cita = normalizar(afirmacion.cita.strip().strip(".…").strip())
         if not cita:
@@ -171,7 +176,7 @@ def verificar_respuesta(texto, tramos):
     verificadas, descartes = verificar(afirmaciones, tramos)
     if not afirmaciones:
         limpio = texto.strip()
-        if limpio and normalizar(limpio) != "no consta":
+        if limpio and not _es_no_consta(limpio):
             descartes = descartes + Counter({"sin_formato": 1})
     return verificadas, descartes
 
