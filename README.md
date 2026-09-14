@@ -53,7 +53,7 @@ Sobre `cheap_worker_core.py`, 473 líneas, con `qwen2.5-coder:7b`:
 | | Tokens |
 |---|---|
 | Lectura directa por el modelo caro | 4179 |
-| Resumen que recibe en su lugar | 415 |
+| Lo que recibe en su lugar (afirmaciones con cita) | 415 |
 | **Ahorro** | **3764 (90%)** |
 
 ## Instalación
@@ -76,7 +76,7 @@ No genera ningún archivo de código: el servidor vive en el repositorio y se ve
 ```powershell
 .\test-mcp-ollama.ps1     # prueba extremo a extremo
 .\test-mcp.ps1            # banco de pruebas: mide el ahorro real
-python -m unittest discover -s tests -t . -v   # 98 tests
+python -m unittest discover -s tests -t . -v
 ```
 
 También se puede llamar a mano, sin construir mensajes JSON-RPC:
@@ -100,7 +100,7 @@ Todo se ajusta en la sección `env` de `.mcp.json`. Ninguna variable es obligato
 | `SHUNT_RESERVE_EXTRA` | `256` | Margen para el prompt de sistema |
 | `SHUNT_TIMEOUT` | `600` | Segundos por llamada |
 | `SHUNT_MIN_LINES` | `350` | Umbral en líneas del hook de bloqueo — ver [Cambiar el umbral](#cambiar-el-umbral) |
-| `SHUNT_CACHE_DIR` | `.cache/cheap-worker` | Dónde se guardan los resúmenes |
+| `SHUNT_CACHE_DIR` | `.cache/cheap-worker` | Dónde se guardan las respuestas cacheadas |
 | `SHUNT_CACHE_MAX` | `200` | Entradas en caché; `0` la desactiva |
 
 Y lo que cambia por herramienta, porque las dos piden cosas opuestas:
@@ -178,16 +178,16 @@ Lo que sí se ha hecho para no atarlo a Ollama:
 
 Lo que sigue siendo de Ollama y no aplica a otros motores: `setup-ollama.ps1`, `start-ollama.ps1`, `test-mcp-ollama.ps1`, y el consejo de comprobar la ventana con `ollama ps`. Con vLLM la ventana la fija `--max-model-len` al arrancar.
 
-## Caché de resúmenes
+## Caché de respuestas
 
-En una sesión de trabajo se releen los mismos archivos una y otra vez. `bulk_read` guarda cada resultado y lo reutiliza mientras nada cambie:
+En una sesión de trabajo se releen los mismos archivos una y otra vez. `bulk_read` guarda cada resultado (las afirmaciones ya verificadas) y lo reutiliza mientras nada cambie:
 
 ```
 primera llamada   24 193 ms
 segunda llamada        956 ms      (y casi todo es arrancar Python)
 ```
 
-La clave es la huella de los bloques que se le mandan al modelo, más el modelo y el techo de salida. Eso significa que se invalida sola: si tocas un archivo, cambia su bloque y cambia la clave. Cambiar de modelo o de techo también produce entradas distintas, porque darían otro resumen.
+La clave es la huella de los bloques que se le mandan al modelo, más el modelo y el techo de salida. Eso significa que se invalida sola: si tocas un archivo, cambia su bloque y cambia la clave. Cambiar de modelo o de techo también produce entradas distintas, porque darían otra respuesta.
 
 La caché es una optimización, nunca un requisito: si el directorio no se puede escribir, se recalcula y ya. Se poda sola al llegar a `SHUNT_CACHE_MAX` entradas, tirando las más antiguas.
 
@@ -197,11 +197,11 @@ La caché es una optimización, nunca un requisito: si el directorio no se puede
 
 `.claude/settings.json` instala un hook `PreToolUse` sobre `Read` que **deniega** leer archivos de **código** de más de `SHUNT_MIN_LINES` líneas y redirige a `bulk_read`.
 
-Los documentos (`.md`, `.txt`, `.csv`, `.json` y cualquier extensión que no sea de código) no se bloquean. `bulk_read` se midió con código, y con prosa inventa: al resumir una ficha de 479 líneas devolvió rellena con cifras una tabla que en el original estaba vacía. Mientras no sea fiable con documentos, empujar a usarlo con ellos es peor que leerlos enteros. La lista de extensiones está en `EXTENSIONES_CODIGO`, en el propio hook. El gist insiste en por qué hace falta:
+Los documentos (`.md`, `.txt`, `.csv`, `.json` y cualquier extensión que no sea de código) no se bloquean. `bulk_read` se midió con código, y con prosa inventaba: al resumir una ficha de 479 líneas devolvió rellena con cifras una tabla que en el original estaba vacía. Desde entonces, la lectura de documentos pasa por la verificación de citas descrita arriba: cada afirmación se descarta si su cita no aparece literal en el archivo. Ampliar este hook para que también cubra documentos queda pendiente de medir con `eval-bulk-read.py`; hasta entonces, empujar a usarlo con ellos sin datos que lo respalden es peor que leerlos enteros. La lista de extensiones está en `EXTENSIONES_CODIGO`, en el propio hook. El gist insiste en por qué hace falta:
 
 > *"Written rules are a suggestion. A block is not."*
 
-La lectura acotada con `offset`/`limit` sigue permitida: para editar hacen falta números de línea fiables, y un resumen no los da.
+La lectura acotada con `offset`/`limit` sigue permitida: para editar hacen falta números de línea fiables, y las afirmaciones verificadas no los dan.
 
 El hook falla abierto. Ante un JSON ilegible o un archivo que no se puede abrir, deja pasar: uno roto que bloquea todo sería peor.
 
@@ -267,7 +267,7 @@ Lo que domina el tiempo es **generar**, no leer. Medido en un portátil con RTX 
 El 76% del tiempo se va escribiendo. De ahí se siguen dos cosas:
 
 - **Bajar `SHUNT_MAX_OUTPUT_TOKENS` acelera**, proporcionalmente.
-- **`SHUNT_MAX_CTX_TOKENS` debe igualar la ventana que el backend sirve de verdad.** No porque una ventana grande sea rápida —procesar la entrada es la parte barata— sino porque quedarse corto fuerza a trocear, y cada trozo es un resumen más que generar, más la llamada de fusión.
+- **`SHUNT_MAX_CTX_TOKENS` debe igualar la ventana que el backend sirve de verdad.** No porque una ventana grande sea rápida —procesar la entrada es la parte barata— sino porque quedarse corto fuerza a trocear, y cada trozo es una llamada más al modelo y más afirmaciones que verificar.
 
 Ese segundo punto es el ajuste más rentable, y es gratis. Medido sobre `cheap_worker_core.py` (473 líneas):
 

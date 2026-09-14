@@ -36,9 +36,13 @@ VOLCADORES = {"cat", "less", "more"}
 METACARACTERES = {"|", ">", ">>", "<", "&", ";", "&&", "||"}
 
 # Solo se bloquea código. bulk_read se diseñó y se midió con código; con prosa
-# inventa: al resumir una ficha de 479 líneas devolvió rellena una tabla que en
-# el original estaba vacía. Hasta que sea fiable con documentos, empujar a usarlo
-# con ellos es peor que dejar leerlos enteros.
+# inventaba: al resumir una ficha de 479 líneas devolvió rellena una tabla que
+# en el original estaba vacía. Desde entonces, la lectura de documentos pasa
+# por verificación de citas (cheap_worker_verify.py): cada afirmación se
+# descarta si su cita no aparece literal en el archivo. Ampliar este hook para
+# que también cubra documentos queda pendiente de medir con eval-bulk-read.py;
+# hasta entonces, empujar a usarlo con ellos sin datos que lo respalden es peor
+# que dejar leerlos enteros.
 EXTENSIONES_CODIGO = {
     ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".java", ".kt", ".scala",
     ".cs", ".go", ".rs", ".c", ".h", ".cpp", ".hpp", ".cc", ".rb", ".php", ".swift",
@@ -79,8 +83,8 @@ def motivo(ruta, lineas, umbral, alternativa):
     return (
         f"{ruta} tiene {lineas} líneas, por encima del umbral de {umbral}. "
         "Usa la herramienta bulk_read del servidor MCP cheap worker: lee el archivo "
-        "entero con el modelo local y te devuelve un resumen, sin gastar tu "
-        f"contexto en el contenido. {alternativa}"
+        "entero con el modelo local y te devuelve afirmaciones con su cita verificada "
+        f"contra el archivo, sin gastar tu contexto en el contenido. {alternativa}"
     )
 
 

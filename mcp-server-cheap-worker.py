@@ -112,7 +112,7 @@ def handle_tools_list(message_id: Any) -> None:
                         "properties": {
                             "question": {
                                 "type": "string",
-                                "description": "Pregunta sobre el código",
+                                "description": "Pregunta sobre los archivos",
                             },
                             "paths": {
                                 "type": "array",
