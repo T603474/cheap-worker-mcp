@@ -6,6 +6,7 @@ Transporte puro: lee JSON-RPC de stdin, declara las herramientas y delega en
 cheap_worker_core. No conoce HTTP ni modelos.
 """
 
+import os
 import sys
 import json
 import logging
@@ -70,9 +71,28 @@ def handle_initialize(message_id: Any, params: Dict[str, Any]) -> None:
     )
 
 
+UMBRAL_POR_DEFECTO = 350
+
+
+def leer_umbral() -> int:
+    """SHUNT_MIN_LINES, o el valor por defecto si falta o no es un entero positivo.
+
+    Es el umbral del hook de bloqueo. Se repite aquí, con el mismo criterio que
+    en hooks/bloquear-lectura-grande.py, porque la descripción de bulk_read debe
+    anunciar el valor que el hook aplica; el hook no importa nada del proyecto
+    para seguir funcionando registrado desde otros proyectos.
+    """
+    try:
+        umbral = int(os.environ.get("SHUNT_MIN_LINES", ""))
+    except ValueError:
+        return UMBRAL_POR_DEFECTO
+    return umbral if umbral > 0 else UMBRAL_POR_DEFECTO
+
+
 def handle_tools_list(message_id: Any) -> None:
     """Lista herramientas disponibles."""
     logger.info("Procesando tools/list")
+    umbral = leer_umbral()
     send_response(
         message_id,
         {
@@ -80,7 +100,7 @@ def handle_tools_list(message_id: Any) -> None:
                 {
                     "name": "bulk_read",
                     "description": (
-                        "OBLIGATORIO para archivos de más de 350 líneas. Lee los archivos en "
+                        f"OBLIGATORIO para archivos de más de {umbral} líneas. Lee los archivos en "
                         "el servidor con un modelo local y devuelve bullets concisos. Úsalo en "
                         "lugar de leer el archivo directamente."
                     ),

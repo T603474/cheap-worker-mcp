@@ -118,8 +118,22 @@ def revisar_bash(entrada, umbral):
     permitir()
 
 
+def leer_umbral():
+    """SHUNT_MIN_LINES, o el valor por defecto si falta o no es un entero positivo.
+
+    Mismo criterio que la descripción de bulk_read en el servidor, para que el
+    umbral que se aplica y el que se anuncia no se separen. Un valor mal escrito
+    no puede tumbar el hook: con 0 bloquearía cualquier lectura.
+    """
+    try:
+        umbral = int(os.environ.get("SHUNT_MIN_LINES", ""))
+    except ValueError:
+        return UMBRAL_POR_DEFECTO
+    return umbral if umbral > 0 else UMBRAL_POR_DEFECTO
+
+
 def main():
-    umbral = int(os.environ.get("SHUNT_MIN_LINES", UMBRAL_POR_DEFECTO))
+    umbral = leer_umbral()
 
     try:
         datos = json.load(sys.stdin)

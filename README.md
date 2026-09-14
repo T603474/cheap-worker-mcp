@@ -81,7 +81,7 @@ Todo se ajusta en la sección `env` de `.mcp.json`. Ninguna variable es obligato
 | `SHUNT_MAX_CTX_TOKENS` | `4096` | Ventana **real** del backend |
 | `SHUNT_RESERVE_EXTRA` | `256` | Margen para el prompt de sistema |
 | `SHUNT_TIMEOUT` | `600` | Segundos por llamada |
-| `SHUNT_MIN_LINES` | `350` | Umbral del hook de bloqueo |
+| `SHUNT_MIN_LINES` | `350` | Umbral en líneas del hook de bloqueo — ver [Cambiar el umbral](#cambiar-el-umbral) |
 | `SHUNT_CACHE_DIR` | `.cache/cheap-worker` | Dónde se guardan los resúmenes |
 | `SHUNT_CACHE_MAX` | `200` | Entradas en caché; `0` la desactiva |
 
@@ -196,6 +196,45 @@ Cubre también `cat`, `less` y `more` por Bash, que es el atajo obvio para salta
 | `grep def grande.py` | pasa | no es un volcado |
 
 Bloquear los casos de la derecha haría el shell inusable a cambio de nada.
+
+### Cambiar el umbral
+
+`SHUNT_MIN_LINES` lo leen dos procesos distintos, y cada uno recibe su entorno de un sitio:
+
+| Quién | Para qué | Dónde se fija |
+|---|---|---|
+| El hook | bloquear la lectura | `env` de la configuración de Claude Code (`.claude/settings.json`, `.claude/settings.local.json` o `~/.claude/settings.json`) |
+| El servidor | anunciarlo en la descripción de `bulk_read` | `env` del servidor MCP (`.mcp.json`, `claude mcp add -e`, `claude_desktop_config.json`) |
+
+Ponerlo solo en `.mcp.json` no cambia el bloqueo: el hook no ve el entorno del servidor. Fíjalo en los dos con el mismo valor.
+
+Un valor que no sea un entero positivo se ignora y se usa 350, en los dos. Con `0` literal se bloquearía cualquier lectura.
+
+### Activarlo en todos tus proyectos
+
+El hook de `.claude/settings.json` solo actúa dentro de este repositorio. Registrar el servidor con `claude mcp add --scope user` pone las herramientas en todos tus proyectos, pero no el bloqueo: fuera de aquí el modelo elige si las usa.
+
+Para bloquear en todos, declara el hook en `~/.claude/settings.json` con la ruta absoluta del script:
+
+```json
+{
+  "env": { "SHUNT_MIN_LINES": "350" },
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Read|Bash",
+        "hooks": [{ "type": "command", "timeout": 10,
+                    "command": "python",
+                    "args": ["C:/ruta/al/proyecto/hooks/bloquear-lectura-grande.py"] }] }
+    ]
+  }
+}
+```
+
+`args` hace que Claude Code lance el script sin pasar por una shell, así que la ruta no necesita comillas. Si gestionas Python con mise, usa `"command": "C:/Users/<tú>/AppData/Local/mise/bin/mise.exe"` y antepón `"exec", "--", "python.exe"` a `args`: el `.exe` hace falta porque un proceso lanzado sin shell puede no tener `PATHEXT`, y sin él mise no encuentra `python`.
+
+Dentro de este repositorio el hook correrá dos veces, el global y el del proyecto. Es inocuo: los dos toman la misma decisión.
+
+**Claude Desktop no tiene hooks.** Ahí no hay bloqueo posible; solo cuenta la descripción de `bulk_read`, que es una indicación y no una barrera.
 
 ## Elegir modelo
 

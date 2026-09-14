@@ -136,3 +136,29 @@ class TestNegociacionDeProtocolo(unittest.TestCase):
 
     def test_sin_version_pedida_no_revienta(self):
         self.assertIn(self._initialize(None), ("2025-06-18", "2025-03-26", "2024-11-05"))
+
+
+class TestUmbralEnLaDescripcion(unittest.TestCase):
+    """La descripcion de bulk_read anuncia el mismo umbral que aplica el hook.
+
+    Estaba escrita a mano con 350: al cambiar SHUNT_MIN_LINES el hook bloqueaba
+    con un valor y el modelo leia otro en la descripcion.
+    """
+
+    def _descripcion(self, env_extra=None):
+        codigo, respuesta, stderr = hablar(
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}, env_extra
+        )
+        self.assertEqual(codigo, 0, stderr)
+        return respuesta["result"]["tools"][0]["description"]
+
+    def test_sin_configurar_anuncia_el_valor_por_defecto(self):
+        self.assertIn("más de 350 líneas", self._descripcion())
+
+    def test_anuncia_el_umbral_configurado(self):
+        self.assertIn("más de 500 líneas", self._descripcion({"SHUNT_MIN_LINES": "500"}))
+
+    def test_un_umbral_invalido_cae_al_valor_por_defecto(self):
+        for valor in ("abc", "0", "-5", ""):
+            with self.subTest(valor=valor):
+                self.assertIn("más de 350 líneas", self._descripcion({"SHUNT_MIN_LINES": valor}))
