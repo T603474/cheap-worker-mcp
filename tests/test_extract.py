@@ -1,3 +1,4 @@
+import contextlib
 import io
 import os
 import sys
@@ -146,8 +147,9 @@ class TestPDF(Base):
     @unittest.skipUnless(pypdf, "pypdf no instalado")
     def test_un_pdf_corrupto_da_el_motivo(self):
         ruta = self.escribir("roto.pdf", "no soy un pdf")
-        with self.assertRaisesRegex(ExtraccionError, "no es un PDF válido"):
-            extraer(ruta)
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaisesRegex(ExtraccionError, "no es un PDF válido"):
+                extraer(ruta)
 
     @unittest.skipUnless(pypdf, "pypdf no instalado")
     def test_un_pdf_cifrado_da_el_motivo(self):
@@ -164,7 +166,11 @@ class TestPDF(Base):
         ruta = self.escribir("a.pdf", pdf_minimo([["hola"]]))
         with mock.patch.dict(sys.modules, {"pypdf": None}):
             with self.assertRaisesRegex(ExtraccionError, "pip install pypdf"):
-                extraer(ruta)
+                try:
+                    extraer(ruta)
+                except ExtraccionError as e:
+                    self.assertIn("el Python que arranca el servidor", str(e))
+                    raise
 
 
 if __name__ == "__main__":

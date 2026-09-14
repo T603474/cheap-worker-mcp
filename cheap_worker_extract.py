@@ -173,7 +173,7 @@ def _extraer_pdf(ruta):
         import pypdf
     except ImportError:
         raise ExtraccionError(
-            "hace falta la librería pypdf para leer PDF: python -m pip install pypdf"
+            "hace falta la librería pypdf para leer PDF: instálala en el Python que arranca el servidor (por ejemplo, python -m pip install pypdf)"
         )
     try:
         lector = pypdf.PdfReader(ruta)
