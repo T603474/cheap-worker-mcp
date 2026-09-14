@@ -35,6 +35,20 @@ VOLCADORES = {"cat", "less", "more"}
 # Si aparece cualquiera de estos, el comando no es un volcado a secas.
 METACARACTERES = {"|", ">", ">>", "<", "&", ";", "&&", "||"}
 
+# Solo se bloquea código. bulk_read se diseñó y se midió con código; con prosa
+# inventa: al resumir una ficha de 479 líneas devolvió rellena una tabla que en
+# el original estaba vacía. Hasta que sea fiable con documentos, empujar a usarlo
+# con ellos es peor que dejar leerlos enteros.
+EXTENSIONES_CODIGO = {
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".java", ".kt", ".scala",
+    ".cs", ".go", ".rs", ".c", ".h", ".cpp", ".hpp", ".cc", ".rb", ".php", ".swift",
+    ".m", ".lua", ".pl", ".r", ".sql", ".sh", ".bash", ".ps1", ".psm1", ".vue", ".svelte",
+}
+
+
+def es_codigo(ruta):
+    return os.path.splitext(ruta)[1].lower() in EXTENSIONES_CODIGO
+
 
 def permitir():
     """Sale sin decir nada: Claude Code interpreta el silencio como 'adelante'."""
@@ -72,7 +86,7 @@ def motivo(ruta, lineas, umbral, alternativa):
 
 def revisar_read(entrada, umbral):
     ruta = entrada.get("file_path")
-    if not ruta:
+    if not ruta or not es_codigo(ruta):
         permitir()
 
     # Lectura acotada: la que se usa para editar.
@@ -107,7 +121,7 @@ def revisar_bash(entrada, umbral):
         permitir()
 
     for pieza in piezas[1:]:
-        if pieza.startswith("-"):
+        if pieza.startswith("-") or not es_codigo(pieza):
             continue
         lineas = cuenta_lineas(pieza)
         if lineas is not None and lineas > umbral:

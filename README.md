@@ -177,7 +177,9 @@ La caché es una optimización, nunca un requisito: si el directorio no se puede
 
 ## Enforcement
 
-`.claude/settings.json` instala un hook `PreToolUse` sobre `Read` que **deniega** leer archivos de más de `SHUNT_MIN_LINES` líneas y redirige a `bulk_read`. El gist insiste en por qué hace falta:
+`.claude/settings.json` instala un hook `PreToolUse` sobre `Read` que **deniega** leer archivos de **código** de más de `SHUNT_MIN_LINES` líneas y redirige a `bulk_read`.
+
+Los documentos (`.md`, `.txt`, `.csv`, `.json` y cualquier extensión que no sea de código) no se bloquean. `bulk_read` se midió con código, y con prosa inventa: al resumir una ficha de 479 líneas devolvió rellena con cifras una tabla que en el original estaba vacía. Mientras no sea fiable con documentos, empujar a usarlo con ellos es peor que leerlos enteros. La lista de extensiones está en `EXTENSIONES_CODIGO`, en el propio hook. El gist insiste en por qué hace falta:
 
 > *"Written rules are a suggestion. A block is not."*
 

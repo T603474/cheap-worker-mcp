@@ -59,5 +59,40 @@ class TestUmbralDelHook(unittest.TestCase):
                 self.assertIsNone(ejecutar(entrada, valor)[1])
 
 
+class TestSoloArchivosDeCodigo(unittest.TestCase):
+    """bulk_read solo es fiable con codigo: con prosa invento cifras.
+
+    Mientras sea asi, el hook no puede empujar a usarlo con documentos. Una
+    ficha de 479 lineas resumida por el modelo local devolvio una tabla
+    rellena con datos que en el original estaba vacia.
+    """
+
+    def _archivo(self, sufijo, lineas=400):
+        fd, ruta = tempfile.mkstemp(suffix=sufijo)
+        with os.fdopen(fd, "w") as f:
+            f.write("linea\n" * lineas)
+        self.addCleanup(os.remove, ruta)
+        return ruta
+
+    def test_un_documento_largo_se_lee_directamente(self):
+        for sufijo in (".md", ".txt", ".csv", ".json", ""):
+            with self.subTest(sufijo=sufijo):
+                ruta = self._archivo(sufijo)
+                entrada = {"tool_name": "Read", "tool_input": {"file_path": ruta}}
+                self.assertIsNone(ejecutar(entrada)[1])
+
+    def test_cat_de_un_documento_largo_no_se_bloquea(self):
+        ruta = self._archivo(".md").replace("\\", "/")
+        entrada = {"tool_name": "Bash", "tool_input": {"command": f'cat "{ruta}"'}}
+        self.assertIsNone(ejecutar(entrada)[1])
+
+    def test_el_codigo_largo_sigue_bloqueado(self):
+        for sufijo in (".py", ".js", ".ts", ".java", ".PY"):
+            with self.subTest(sufijo=sufijo):
+                ruta = self._archivo(sufijo)
+                entrada = {"tool_name": "Read", "tool_input": {"file_path": ruta}}
+                self.assertEqual(ejecutar(entrada)[1], "deny")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -100,9 +100,10 @@ def handle_tools_list(message_id: Any) -> None:
                 {
                     "name": "bulk_read",
                     "description": (
-                        f"OBLIGATORIO para archivos de más de {umbral} líneas. Lee los archivos en "
-                        "el servidor con un modelo local y devuelve bullets concisos. Úsalo en "
-                        "lugar de leer el archivo directamente."
+                        f"OBLIGATORIO para archivos de código de más de {umbral} líneas. Lee los "
+                        "archivos en el servidor con un modelo local y devuelve bullets concisos. "
+                        "Úsalo en lugar de leer el código directamente. No es fiable con "
+                        "documentos en prosa (puede inventar cifras): esos, léelos directamente."
                     ),
                     "inputSchema": {
                         "type": "object",
