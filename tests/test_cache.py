@@ -61,10 +61,10 @@ class TestCache(unittest.TestCase):
 
     def test_cambiar_de_modelo_invalida_la_entrada(self):
         bulk_read(self._cfg(SHUNT_MODEL_BULK="a:3b"), "q", [self.archivo],
-                  backend=BackendFalso([respuesta("del 3b")]))
+                  backend=BackendFalso([respuesta("del modelo a")]))
         otro = bulk_read(self._cfg(SHUNT_MODEL_BULK="b:7b"), "q", [self.archivo],
-                         backend=BackendFalso([respuesta("del 7b")]))
-        self.assertIn("- del 7b", otro)
+                         backend=BackendFalso([respuesta("del modelo b")]))
+        self.assertIn("- del modelo b", otro)
 
     def test_cambiar_el_techo_de_salida_invalida_la_entrada(self):
         bulk_read(self._cfg(SHUNT_MAX_OUTPUT_BULK="512"), "q", [self.archivo],
