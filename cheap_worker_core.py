@@ -11,8 +11,12 @@ import ast
 import hashlib
 import os
 import requests
+from collections import Counter
 from dataclasses import dataclass
 from typing import Mapping, Optional
+
+from cheap_worker_extract import ExtraccionError, extraer
+from cheap_worker_verify import Tramo, analizar_respuesta, componer, verificar
 
 DEFAULT_API_BASE = "http://localhost:11434/v1"
 DEFAULT_MODEL = "qwen2.5-coder:7b"
@@ -167,8 +171,17 @@ def estimate_tokens(text: str) -> int:
 
 
 @dataclass
+class Bloque:
+    """Lo que se manda al modelo en una llamada, y de qué tramos sale."""
+
+    texto: str
+    tramos: list
+
+
+@dataclass
 class ChunkResult:
     blocks: list
+    # Pares (ruta, motivo) de los archivos que no se pudieron leer.
     missing: list
 
 
@@ -185,47 +198,40 @@ def _wrap(path, content, lines=None, part=None, total=None) -> str:
 
 
 def _split_lines_to_budget(lines, budget):
-    """Parte una lista de líneas en tramos que quepan en el presupuesto.
+    """Parte las líneas en tramos que quepan en el presupuesto.
 
-    Devuelve tuplas (primera_linea, ultima_linea, texto), numeradas desde 1.
-    Una línea individual mayor que el límite se emite sola y desbordada: es un
-    caso patológico (ficheros minificados) que no merece más maquinaria.
+    Devuelve pares (inicio, fin) de índices, con fin exclusivo. Una línea
+    individual mayor que el límite se emite sola y desbordada: es un caso
+    patológico (ficheros minificados) que no merece más maquinaria.
     """
     limite = max(budget - _WRAP_OVERHEAD_TOKENS, 1)
     tramos = []
-    actual = []
-    inicio = 1
+    inicio = 0
     tokens = 0
-    for numero, linea in enumerate(lines, start=1):
-        coste = estimate_tokens(linea)
-        if actual and tokens + coste > limite:
-            tramos.append((inicio, numero - 1, "".join(actual)))
-            actual = []
-            inicio = numero
+    for i, linea in enumerate(lines):
+        coste = estimate_tokens(linea + "\n")
+        if i > inicio and tokens + coste > limite:
+            tramos.append((inicio, i))
+            inicio = i
             tokens = 0
-        actual.append(linea)
         tokens += coste
-    if actual:
-        tramos.append((inicio, inicio + len(actual) - 1, "".join(actual)))
+    if lines:
+        tramos.append((inicio, len(lines)))
     return tramos
 
 
-def _agrupar_por_presupuesto(items, budget):
-    """Agrupa textos en tandas cuyo coste estimado quepa en el presupuesto.
-
-    Algoritmo voraz compartido: lo usan tanto el empaquetado de archivos como
-    el plegado de análisis parciales en el paso reduce.
-    """
+def _agrupar_por_presupuesto(unidades, budget):
+    """Agrupa pares (texto, tramo) en tandas cuyo texto quepa en el presupuesto."""
     grupos = []
     actual = []
     tokens = 0
-    for item in items:
-        coste = estimate_tokens(item)
+    for unidad in unidades:
+        coste = estimate_tokens(unidad[0])
         if actual and tokens + coste > budget:
             grupos.append(actual)
             actual = []
             tokens = 0
-        actual.append(item)
+        actual.append(unidad)
         tokens += coste
     if actual:
         grupos.append(actual)
@@ -233,33 +239,35 @@ def _agrupar_por_presupuesto(items, budget):
 
 
 def chunk_files(paths, budget) -> ChunkResult:
-    """Lee, envuelve y agrupa archivos en bloques que quepan en el presupuesto."""
-    missing = []
+    """Extrae, envuelve y agrupa archivos en bloques que quepan en el presupuesto."""
+    no_leidos = []
     unidades = []
 
-    for path in paths:
-        if not os.path.isfile(path):
-            missing.append(path)
-            continue
+    for orden, path in enumerate(paths):
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()
-        except OSError:
-            missing.append(path)
+            doc = extraer(path)
+        except ExtraccionError as e:
+            no_leidos.append((path, str(e)))
             continue
 
-        entero = _wrap(path, "".join(lines))
+        entero = _wrap(path, "\n".join(doc.lineas))
         if estimate_tokens(entero) <= budget:
-            unidades.append(entero)
+            unidades.append((entero, Tramo(path, orden, doc.lineas, doc.ubicaciones, 0)))
             continue
 
-        tramos = _split_lines_to_budget(lines, budget)
-        total = len(tramos)
-        for indice, (primera, ultima, texto) in enumerate(tramos, start=1):
-            unidades.append(_wrap(path, texto, lines=f"{primera}-{ultima}", part=indice, total=total))
+        cortes = _split_lines_to_budget(doc.lineas, budget)
+        total = len(cortes)
+        for indice, (inicio, fin) in enumerate(cortes, start=1):
+            texto = _wrap(path, "\n".join(doc.lineas[inicio:fin]),
+                          lines=f"{inicio + 1}-{fin}", part=indice, total=total)
+            tramo = Tramo(path, orden, doc.lineas[inicio:fin], doc.ubicaciones[inicio:fin], inicio)
+            unidades.append((texto, tramo))
 
-    blocks = ["".join(grupo) for grupo in _agrupar_por_presupuesto(unidades, budget)]
-    return ChunkResult(blocks=blocks, missing=missing)
+    blocks = [
+        Bloque("".join(texto for texto, _ in grupo), [tramo for _, tramo in grupo])
+        for grupo in _agrupar_por_presupuesto(unidades, budget)
+    ]
+    return ChunkResult(blocks=blocks, missing=no_leidos)
 
 
 class Backend:
@@ -335,6 +343,11 @@ class Backend:
         )
 
 
+# Cambia cuando cambia la forma de la respuesta: las entradas guardadas con otra
+# forma (por ejemplo, resúmenes sin verificar) no deben reutilizarse.
+FORMATO_RESPUESTA = "citas-verificadas-1"
+
+
 def _clave_cache(perfil: Perfil, question: str, bloques, faltan) -> str:
     """Huella de todo lo que determina la respuesta.
 
@@ -345,7 +358,7 @@ def _clave_cache(perfil: Perfil, question: str, bloques, faltan) -> str:
     otro resumen.
     """
     h = hashlib.sha256()
-    partes = [perfil.modelo, str(perfil.salida_max), str(perfil.temperatura),
+    partes = [FORMATO_RESPUESTA, perfil.modelo, str(perfil.salida_max), str(perfil.temperatura),
               question, *bloques, *faltan]
     for parte in partes:
         h.update(parte.encode("utf-8"))
@@ -406,89 +419,60 @@ def _cache_podar(cfg: Config) -> None:
         pass
 
 
-# Prompt del analista, literal del gist.
+# Prompt del lector. El del gist lo presentaba como analista de código y exigía
+# empezar cada viñeta por nombre, tipo y línea: con una tabla vacía no hay nada
+# que citar, y un modelo pequeño rellenaba. Ahora cada dato va con su cita, que
+# el servidor comprueba.
 SYSTEM_BULK = (
-    "You are a precise code analyst. Read the provided files and answer the question concisely.\n"
-    "Output structured bullets only. No greetings, no prose. Lead every bullet with exact "
-    "name/type/line.\n"
-    "Use nested bullets for details. Skip anything not asked."
+    "You read files (source code or documents, in any language) and answer a question about them.\n"
+    "Use ONLY what is written in the files. Never guess, never fill gaps, never invent numbers.\n"
+    "Answer in the language of the question.\n"
+    "Output format, and nothing else:\n"
+    "- <one fact that answers the question>\n"
+    "  > <exact text copied character by character from the files that proves the fact>\n"
+    "One bullet per fact. Every bullet needs its quote line. Copy the quote literally: "
+    "do not translate, summarize or fix it.\n"
+    "If the files do not contain the answer, output exactly: NO CONSTA"
 )
-
-# Prompt de fusión. No está en el gist: hace falta para el paso reduce.
-SYSTEM_REDUCE = (
-    "You merge several partial analyses of the same codebase into one answer.\n"
-    "Output structured bullets only. Remove duplicates and keep exact names and line numbers.\n"
-    "Do not add information that is not present in the partial analyses."
-)
-
-# Cota dura de pasadas de reduce, por si el plegado no converge.
-_MAX_REDUCE_PASADAS = 5
-
-
-def _prompt_reduce(question, parciales):
-    unidas = "\n\n".join(
-        f'<partial n="{i}">\n{p}\n</partial>' for i, p in enumerate(parciales, start=1)
-    )
-    return f"Question: {question}\n\nPartial analyses:\n{unidas}"
-
-
-def _reduce(cfg, backend, question, parciales, perfil):
-    """Pliega los análisis parciales hasta dejar uno solo.
-
-    Si una pasada no agrupa nada, cada llamada se limitaría a reescribir un
-    parcial aislado, que no es para lo que existe el plegado: se aborta en vez
-    de gastar llamadas y acabar devolviendo parciales sin fusionar como si
-    fueran una respuesta buena.
-    """
-    actuales = list(parciales)
-    for _ in range(_MAX_REDUCE_PASADAS):
-        grupos = _agrupar_por_presupuesto(actuales, perfil.presupuesto)
-        if len(grupos) == len(actuales):
-            raise BudgetError(
-                f"El plegado no avanza: {len(actuales)} análisis parciales que no caben "
-                f"juntos en {perfil.presupuesto} tokens. Sube SHUNT_MAX_CTX_TOKENS o baja "
-                "SHUNT_MAX_OUTPUT_BULK."
-            )
-        actuales = [
-            backend.chat(perfil, SYSTEM_REDUCE, _prompt_reduce(question, grupo))
-            for grupo in grupos
-        ]
-        if len(actuales) == 1:
-            return actuales[0]
-    raise BudgetError(
-        f"El plegado no convergió en {_MAX_REDUCE_PASADAS} pasadas; quedan "
-        f"{len(actuales)} análisis parciales sin fusionar."
-    )
 
 
 def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
-    """Analiza archivos con el modelo barato. El frontier nunca ve su contenido."""
+    """Analiza archivos con el modelo barato. El frontier nunca ve su contenido.
+
+    Cada trozo se pregunta por separado y su respuesta se verifica contra ese
+    mismo trozo. Las afirmaciones verificadas se juntan en código: fusionarlas
+    con el modelo era otra ocasión de inventar y otra llamada de espera.
+    """
     backend = backend if backend is not None else Backend(cfg)
     perfil = cfg.perfil_bulk
     troceado = chunk_files(paths, perfil.presupuesto)
 
     if not troceado.blocks:
-        raise BudgetError("Ningún archivo legible en: " + ", ".join(paths))
+        motivos = "; ".join(f"{ruta}: {motivo}" for ruta, motivo in troceado.missing)
+        raise BudgetError(f"Ningún archivo legible. {motivos}")
 
     # En una sesión de trabajo se releen los mismos archivos una y otra vez.
     # Recalcular un resumen idéntico cuesta minutos; recuperarlo, nada.
-    clave = _clave_cache(perfil, question, troceado.blocks, troceado.missing)
+    clave = _clave_cache(
+        perfil, question,
+        [bloque.texto for bloque in troceado.blocks],
+        [f"{ruta}: {motivo}" for ruta, motivo in troceado.missing],
+    )
     guardado = _cache_leer(cfg, clave)
     if guardado is not None:
         return guardado
 
-    parciales = [
-        backend.chat(perfil, SYSTEM_BULK, f"Question: {question}\n\nFiles:\n{bloque}")
-        for bloque in troceado.blocks
-    ]
+    verificadas = []
+    descartes = Counter()
+    for bloque in troceado.blocks:
+        respuesta = backend.chat(perfil, SYSTEM_BULK, f"Question: {question}\n\nFiles:\n{bloque.texto}")
+        buenas, malas = verificar(analizar_respuesta(respuesta), bloque.tramos)
+        verificadas.extend(buenas)
+        descartes.update(malas)
 
-    respuesta = parciales[0] if len(parciales) == 1 else _reduce(cfg, backend, question, parciales, perfil)
-
-    if troceado.missing:
-        respuesta += "\n\nArchivos no encontrados: " + ", ".join(troceado.missing)
-
-    _cache_escribir(cfg, clave, respuesta)
-    return respuesta
+    resultado = componer(verificadas, descartes, troceado.missing)
+    _cache_escribir(cfg, clave, resultado)
+    return resultado
 
 
 # Prompt del generador, literal del gist.
