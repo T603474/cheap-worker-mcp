@@ -7,6 +7,7 @@ import unittest
 import zipfile
 from unittest import mock
 
+import cheap_worker_extract
 from cheap_worker_extract import Documento, ExtraccionError, extraer
 from tests.helpers import pdf_minimo
 
@@ -83,6 +84,31 @@ class TestTexto(Base):
         with self.assertRaisesRegex(ExtraccionError, "binario"):
             extraer(ruta)
 
+    def test_recursionerror_del_lector_se_convierte_en_extraccionerror(self):
+        ruta = self.escribir("a.md", "hola\n")
+        with mock.patch.dict(cheap_worker_extract._LECTORES, {".md": mock.Mock(side_effect=RecursionError())}):
+            with self.assertRaisesRegex(ExtraccionError, r"no se pudo extraer el texto \(RecursionError\)"):
+                extraer(ruta)
+
+    def test_memoryerror_del_lector_se_convierte_en_extraccionerror(self):
+        ruta = self.escribir("a.md", "hola\n")
+        with mock.patch.dict(cheap_worker_extract._LECTORES, {".md": mock.Mock(side_effect=MemoryError())}):
+            with self.assertRaisesRegex(ExtraccionError, r"no se pudo extraer el texto \(MemoryError\)"):
+                extraer(ruta)
+
+    def test_valueerror_del_lector_se_convierte_en_extraccionerror(self):
+        ruta = self.escribir("a.md", "hola\n")
+        with mock.patch.dict(cheap_worker_extract._LECTORES, {".md": mock.Mock(side_effect=ValueError())}):
+            with self.assertRaisesRegex(ExtraccionError, r"no se pudo extraer el texto \(ValueError\)"):
+                extraer(ruta)
+
+    def test_extraccionerror_del_lector_no_se_reenvuelve(self):
+        ruta = self.escribir("a.md", "hola\n")
+        with mock.patch.dict(cheap_worker_extract._LECTORES,
+                              {".md": mock.Mock(side_effect=ExtraccionError("motivo original"))}):
+            with self.assertRaisesRegex(ExtraccionError, "^motivo original$"):
+                extraer(ruta)
+
 
 class TestWord(Base):
     def test_extrae_parrafos_y_celdas_en_orden(self):
@@ -95,6 +121,12 @@ class TestWord(Base):
         ruta = self.escribir("roto.docx", "esto no es un zip")
         with self.assertRaisesRegex(ExtraccionError, "no es un documento válido"):
             extraer(ruta)
+
+    def test_un_miembro_de_zip_demasiado_grande_se_rechaza(self):
+        ruta = self.zip_con("a.docx", "word/document.xml", DOCX_XML)
+        with mock.patch.object(cheap_worker_extract, "_MAX_BYTES_MIEMBRO", 10):
+            with self.assertRaisesRegex(ExtraccionError, "demasiado grande"):
+                extraer(ruta)
 
 
 class TestOpenDocument(Base):
@@ -109,6 +141,22 @@ class TestOpenDocument(Base):
         with self.assertRaisesRegex(ExtraccionError, "no es un documento válido"):
             extraer(ruta)
 
+    def _parrafo_con_c(self, valor_c):
+        import xml.etree.ElementTree as ET
+        xml = (
+            '<text:p xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">'
+            f'uno<text:s text:c="{valor_c}"/>dos</text:p>'
+        )
+        return ET.fromstring(xml)
+
+    def test_text_c_no_numerico_se_trata_como_uno(self):
+        texto = cheap_worker_extract._texto_odt(self._parrafo_con_c("x"))
+        self.assertEqual(texto, "uno dos")
+
+    def test_text_c_enorme_se_limita_a_cien(self):
+        texto = cheap_worker_extract._texto_odt(self._parrafo_con_c("1000000"))
+        self.assertEqual(texto, "uno" + " " * 100 + "dos")
+
 
 class TestHTML(Base):
     def test_quita_etiquetas_scripts_y_estilos(self):
@@ -121,6 +169,15 @@ class TestHTML(Base):
         doc = extraer(ruta)
         self.assertEqual(doc.lineas, ["T", "Cabecera", "Hola & adiós", "a b"])
         self.assertEqual(doc.ubicaciones, ["línea 1", "línea 2", "línea 3", "línea 4"])
+
+    def test_bloques_html5_tambien_separan_lineas(self):
+        ruta = self.escribir("a.html", (
+            "<nav>Menú</nav><main><article><h1>T</h1>"
+            "<details><summary>Resumen</summary><p>Cuerpo</p></details>"
+            "</article></main><aside>Lateral</aside>"
+        ))
+        doc = extraer(ruta)
+        self.assertEqual(doc.lineas, ["Menú", "T", "Resumen", "Cuerpo", "Lateral"])
 
     def test_htm_tambien(self):
         ruta = self.escribir("a.htm", "<p>uno</p><p>dos</p>")

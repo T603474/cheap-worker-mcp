@@ -27,6 +27,10 @@ class Documento:
 # Bytes que se miran para decidir si un formato no reconocido es binario.
 _BYTES_SONDA = 8192
 
+# Un miembro de zip (docx/odt) que declara más que esto se rechaza sin
+# descomprimir: un zip bomb declara un file_size enorme para un .zip pequeño.
+_MAX_BYTES_MIEMBRO = 50 * 1024 * 1024
+
 _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _TEXT = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
 
@@ -36,7 +40,15 @@ def extraer(ruta: str) -> Documento:
     if not os.path.isfile(ruta):
         raise ExtraccionError("no existe")
     extension = os.path.splitext(ruta)[1].lower()
-    return _LECTORES.get(extension, _extraer_texto)(ruta)
+    lector = _LECTORES.get(extension, _extraer_texto)
+    try:
+        return lector(ruta)
+    except ExtraccionError:
+        raise
+    except (RecursionError, MemoryError, ValueError) as e:
+        # Un documento maligno o profundamente anidado puede agotar la pila o
+        # la memoria del parser; al usuario le basta saber que no se pudo leer.
+        raise ExtraccionError(f"no se pudo extraer el texto ({type(e).__name__})")
 
 
 def _numeradas(lineas, etiqueta):
@@ -63,6 +75,9 @@ def _parrafos(textos):
 def _xml_de_zip(ruta, miembro):
     try:
         with zipfile.ZipFile(ruta) as z:
+            info = z.getinfo(miembro)
+            if info.file_size > _MAX_BYTES_MIEMBRO:
+                raise ExtraccionError("es demasiado grande para leerlo")
             return ET.fromstring(z.read(miembro))
     except (zipfile.BadZipFile, KeyError, ET.ParseError, OSError):
         raise ExtraccionError("no es un documento válido")
@@ -104,7 +119,12 @@ def _texto_odt(parrafo):
             partes.append(elemento.text)
         for hijo in elemento:
             if hijo.tag == _TEXT + "s":
-                partes.append(" " * int(hijo.get(_TEXT + "c", "1")))
+                try:
+                    repeticiones = int(hijo.get(_TEXT + "c", "1"))
+                except ValueError:
+                    repeticiones = 1
+                repeticiones = max(0, min(repeticiones, 100))
+                partes.append(" " * repeticiones)
             elif hijo.tag in (_TEXT + "tab", _TEXT + "line-break"):
                 partes.append(" ")
             else:
@@ -124,7 +144,8 @@ def _extraer_odt(ruta):
 _BLOQUES_HTML = {
     "p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "section",
     "article", "header", "footer", "table", "ul", "ol", "blockquote", "pre", "dt",
-    "dd", "hr", "title",
+    "dd", "hr", "title", "nav", "main", "aside", "figure", "figcaption", "thead",
+    "tbody", "tfoot", "caption", "details", "summary", "form", "address", "dl",
 }
 _CELDAS_HTML = {"td", "th"}
 _OMITIDOS_HTML = {"script", "style"}
