@@ -280,7 +280,9 @@ Ese segundo punto es el ajuste más rentable, y es gratis. Medido sobre `cheap_w
 
 *Medido antes del cambio a verificación de citas: la tercera llamada con 4096 era la de fusión (reduce), que ya no existe — ahora la composición es en código. Pendiente de remedir con el flujo actual.*
 
-**3.3× más rápido**, y 8192 era lo que Ollama ya estaba sirviendo. Comprueba el tuyo con `ollama ps`, columna `CONTEXT`, y pon ese número. Pasarse es peor que quedarse corto: Ollama recorta en silencio.
+**3.3× más rápido.** Comprueba la ventana que sirve tu Ollama con `ollama ps`, columna `CONTEXT`, con el modelo cargado, y pon ese número. Pasarse es peor que quedarse corto: Ollama recorta en silencio **el principio** del mensaje, que es donde van las instrucciones y la pregunta. El modelo recibe entonces solo texto y lo resume, en vez de responder.
+
+Ollama sirve 4096 por defecto aunque el modelo admita más. Para subirla, fija la variable de entorno `OLLAMA_CONTEXT_LENGTH` (por ejemplo, `8192`) y reinicia Ollama. Con un modelo de 3–4B cabe en 4 GB de VRAM.
 
 **Un modelo solo va rápido si cabe entero en la VRAM.** Esa es la frontera, no el número de parámetros ni la cuantización. Medido sobre el mismo archivo y la misma pregunta:
 
@@ -293,6 +295,27 @@ Ese segundo punto es el ajuste más rentable, y es gratis. Medido sobre `cheap_w
 **5,5× de diferencia** entre caber y no caber. Bajar la cuantización sin bajar de tamaño no sirve: el Q3 sigue sin caber y encima paga más descuantización.
 
 La calidad del 3B resumiendo aguanta bien: cubre las mismas responsabilidades que el 7B, con menos anidamiento. Por eso la configuración por defecto de `.mcp.json` le da el 3B a `bulk_read`, que es lo frecuente, y reserva el 7B para `code_write`, donde la especialización en código sí se paga.
+
+### Con documentos: evaluación
+
+Medido con `eval-bulk-read.py` sobre documentos jurídicos reales en español (de 96 a 2 789 líneas): 8 preguntas con dato o respuesta conocida y 3 cuya respuesta no está en el texto, con ventana de 4096. "Acierto real" cuenta solo cuando el dato es correcto **y** la cita lo respalda, revisado a mano.
+
+| Modelo | Aciertos reales (de 8) | "No consta" correctos (de 3) | Tiempo total |
+|---|---|---|---|
+| `llama3.2:3b` | 3 | 2 | 694 s |
+| `gemma3:4b` | 2 | 1 | 833 s |
+| `qwen2.5:3b` | 1 | 3 | 389 s |
+| `qwen2.5-coder:3b` | 0 | 2 | 365 s |
+
+Lo que enseña:
+
+- **Con documentos cortos (unas 100 líneas) responden bien.** Con documentos largos, ninguno es fiable.
+- **La verificación funcionó:** ninguna cita inventada ni cifra en dígitos inventada llegó a la salida.
+- **Pero no basta.** Los modelos pequeños adjuntan citas reales que no tienen relación con la afirmación ("plazo de tres años" apoyado en un artículo sobre otra cosa). La respuesta buena suele estar, enterrada entre varias afirmaciones "verificadas" irrelevantes.
+- `qwen2.5-coder:3b` apenas sigue el formato con prosa: con documentos, usa un modelo generalista.
+- Ninguna consulta agotó el tiempo: el documento de 1 905 líneas tardó entre 45 y 160 s.
+
+Por eso el hook sigue sin bloquear documentos: para extraer datos de un documento largo, léelo.
 
 **No uses modelos de razonamiento.** `gemma4:12b` devuelve la cadena de pensamiento en un campo aparte y deja el contenido vacío: gasta el techo de salida pensando y no llega a responder. El shunt lo detecta y da un error con ese diagnóstico, pero el modelo no sirve para este papel.
 
