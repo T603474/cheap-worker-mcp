@@ -167,7 +167,7 @@ class TestVerificar(unittest.TestCase):
     def test_busca_en_todos_los_tramos_del_bloque(self):
         tramos = [tramo(["nada que ver aquí"], ruta="a.md"),
                   tramo(["x", "la cita correcta está aquí"], ruta="b.md", orden=1)]
-        verificadas, _ = self.verificar_una("Hecho", "la cita correcta está", tramos)
+        verificadas, _ = self.verificar_una("La cita correcta", "la cita correcta está", tramos)
         self.assertEqual((verificadas[0].ruta, verificadas[0].ubicacion), ("b.md", "línea 2"))
         self.assertEqual(verificadas[0].posicion, (1, 1))
 
@@ -202,6 +202,85 @@ class TestVerificarRespuesta(unittest.TestCase):
         verificadas, descartes = verificar_respuesta(texto, [tramo(self.LINEAS)])
         self.assertEqual(len(verificadas), 1)
         self.assertEqual(descartes, Counter())
+
+
+class TestPertinencia(unittest.TestCase):
+    """Los filtros de pertinencia, solo en documentos (sección 6 del diseño)."""
+
+    def una(self, pregunta, afirmacion, cita, lineas, ruta="doc.md"):
+        return verificar([Afirmacion(afirmacion, cita)], [tramo(lineas, ruta=ruta)], pregunta)
+
+    def test_cita_que_respalda_y_toca_la_pregunta_pasa(self):
+        verificadas, descartes = self.una(
+            "¿Qué mayoría exige la reforma del estatuto?",
+            "La reforma del estatuto requiere una mayoría de 3/5 en cada junta.",
+            "Mayoría 3/5: necesaria para la reforma del estatuto en cada una de las juntas",
+            ["Mayoría 3/5: necesaria para la reforma del estatuto en cada una de las juntas"])
+        self.assertEqual((len(verificadas), descartes), (1, Counter()))
+
+    def test_cita_de_otro_asunto_no_respalda(self):
+        verificadas, descartes = self.una(
+            "¿En qué plazo se resuelve un recurso?",
+            "El recurso se resuelve en un plazo de tres años.",
+            "A los tres años de su nombramiento, los vocales del consejo se renuevan por sorteo",
+            ["A los tres años de su nombramiento, los vocales del consejo se renuevan por sorteo"])
+        self.assertEqual((verificadas, descartes), ([], Counter({"cita_no_respalda": 1})))
+
+    def test_numero_en_letras_que_no_esta_en_la_cita(self):
+        verificadas, descartes = self.una(
+            "¿Cuántos vocales tiene el consejo?",
+            "El consejo tiene doce vocales.",
+            "Las juntas podrán delegar en la comisión la potestad de dictar normas",
+            ["Las juntas podrán delegar en la comisión la potestad de dictar normas"])
+        self.assertEqual((verificadas, descartes), ([], Counter({"cifras_no_respaldadas": 1})))
+
+    def test_anadidos_que_la_cita_no_dice(self):
+        verificadas, descartes = self.una(
+            "¿Qué hace falta para convocar una asamblea?",
+            "Para convocar una asamblea hace falta 1/10 de los socios de cualquiera de las juntas.",
+            "Mayoría 1/10: la que se necesita para convocar una asamblea por parte de los socios",
+            ["Mayoría 1/10: la que se necesita para convocar una asamblea por parte de los socios"])
+        self.assertEqual((verificadas, descartes), ([], Counter({"cita_no_respalda": 1})))
+
+    def test_cita_que_respalda_pero_ajena_a_la_pregunta(self):
+        linea = "Los vocales del consejo se renuevan por sorteo cada tres años"
+        verificadas, descartes = self.una(
+            "¿Qué mayoría exige la reforma del estatuto?",
+            "Los vocales del consejo se renuevan por sorteo cada tres años.",
+            linea, [linea])
+        self.assertEqual((verificadas, descartes), ([], Counter({"cita_ajena": 1})))
+
+    def test_numero_en_letras_equivalente_a_digitos_pasa(self):
+        linea = "El consejo se compone de 12 vocales elegidos por la junta"
+        verificadas, _ = self.una("¿Cuántos vocales tiene el consejo?",
+                                  "El consejo se compone de doce vocales.", linea, [linea])
+        self.assertEqual(len(verificadas), 1)
+
+    def test_cifra_en_letras_inventada_se_descarta(self):
+        linea = "El plazo para resolver el recurso es de treinta días"
+        _, descartes = self.una("¿Qué plazo tiene el recurso?",
+                                "El plazo para resolver el recurso es de quince días.", linea, [linea])
+        self.assertEqual(descartes, Counter({"cifras_no_respaldadas": 1}))
+
+    def test_documento_en_ingles(self):
+        linea = "The committee shall approve the annual budget before March"
+        verificadas, _ = self.una("Who approves the budget?",
+                                  "The committee approves the annual budget.", linea, [linea], ruta="doc.txt")
+        self.assertEqual(len(verificadas), 1)
+
+    def test_el_codigo_no_pasa_por_los_filtros_de_pertinencia(self):
+        linea = "def bulk_read(cfg, question, paths, backend=None):"
+        verificadas, descartes = self.una("¿Qué funciones define?", "bulk_read: analiza dos archivos",
+                                          "def bulk_read(cfg, question, paths, backend=None)",
+                                          [linea], ruta="modulo.py")
+        self.assertEqual((len(verificadas), descartes), (1, Counter()))
+
+    def test_sin_pregunta_no_descarta_por_ajena(self):
+        linea = "Los vocales del consejo se renuevan por sorteo cada tres años"
+        verificadas, _ = verificar(
+            [Afirmacion("Los vocales del consejo se renuevan por sorteo cada tres años.", linea)],
+            [tramo([linea])])
+        self.assertEqual(len(verificadas), 1)
 
 
 class TestComponer(unittest.TestCase):

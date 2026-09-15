@@ -345,7 +345,7 @@ class Backend:
 
 # Cambia cuando cambia la forma de la respuesta: las entradas guardadas con otra
 # forma (por ejemplo, resúmenes sin verificar) no deben reutilizarse.
-FORMATO_RESPUESTA = "citas-verificadas-1"
+FORMATO_RESPUESTA = "citas-verificadas-2"
 
 
 def _clave_cache(perfil: Perfil, question: str, bloques, faltan) -> str:
@@ -466,7 +466,7 @@ def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
     descartes = Counter()
     for bloque in troceado.blocks:
         respuesta = backend.chat(perfil, SYSTEM_BULK, f"Question: {question}\n\nFiles:\n{bloque.texto}")
-        buenas, malas = verificar_respuesta(respuesta, bloque.tramos)
+        buenas, malas = verificar_respuesta(respuesta, bloque.tramos, question)
         verificadas.extend(buenas)
         descartes.update(malas)
 
