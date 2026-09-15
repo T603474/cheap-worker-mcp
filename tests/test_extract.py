@@ -230,5 +230,27 @@ class TestPDF(Base):
                     raise
 
 
+class TestEsCodigo(unittest.TestCase):
+    def test_extensiones_de_codigo_y_de_documento(self):
+        from cheap_worker_extract import es_codigo
+        self.assertTrue(es_codigo("a/b/modulo.py"))
+        self.assertTrue(es_codigo("Script.PS1"))
+        self.assertFalse(es_codigo("ficha.md"))
+        self.assertFalse(es_codigo("informe.pdf"))
+        self.assertFalse(es_codigo("sin_extension"))
+
+    def test_misma_lista_que_el_hook(self):
+        # El hook no importa nada del proyecto (se ejecuta desde otros); conserva
+        # su copia, y este test impide que las dos listas se separen.
+        import importlib.util
+        from cheap_worker_extract import EXTENSIONES_CODIGO
+        raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        spec = importlib.util.spec_from_file_location(
+            "hook_bloqueo", os.path.join(raiz, "hooks", "bloquear-lectura-grande.py"))
+        hook = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(hook)
+        self.assertEqual(set(EXTENSIONES_CODIGO), set(hook.EXTENSIONES_CODIGO))
+
+
 if __name__ == "__main__":
     unittest.main()

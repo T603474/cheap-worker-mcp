@@ -24,6 +24,19 @@ class Documento:
     ubicaciones: list
 
 
+# Misma lista que hooks/bloquear-lectura-grande.py, que conserva su copia porque
+# se ejecuta desde otros proyectos. tests/test_extract.py comprueba que coinciden.
+EXTENSIONES_CODIGO = frozenset({
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".java", ".kt", ".scala",
+    ".cs", ".go", ".rs", ".c", ".h", ".cpp", ".hpp", ".cc", ".rb", ".php", ".swift",
+    ".m", ".lua", ".pl", ".r", ".sql", ".sh", ".bash", ".ps1", ".psm1", ".vue", ".svelte",
+})
+
+
+def es_codigo(ruta: str) -> bool:
+    return os.path.splitext(ruta)[1].lower() in EXTENSIONES_CODIGO
+
+
 # Bytes que se miran para decidir si un formato no reconocido es binario.
 _BYTES_SONDA = 8192
 
