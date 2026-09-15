@@ -42,7 +42,11 @@ Cada afirmación de la respuesta trae una cita literal y dónde está:
 
 El servidor comprueba cada cita contra el archivo y descarta lo que no encuentra. También descarta la afirmación cuyas cifras no aparecen en su cita: es el caso de citar un texto auténtico y adjuntarle un número inventado. Si no queda nada, responde `No consta en los documentos.`
 
-**Lo que no garantiza:** una cita real con una conclusión equivocada pasa la verificación, y las cifras escritas con palabras ("tres quintos") no las cubre el filtro de cifras. Un resumen de un modelo pequeño no sustituye a leer: para extraer datos que importan, lee el documento.
+**Con documentos, además, la cita tiene que venir al caso.** Una afirmación se descarta si menos del 60 % de sus palabras con contenido aparecen en su cita ("con cita que no respalda la afirmación") o si la cita no comparte ninguna palabra con la pregunta ("con cita ajena a la pregunta"). Los números se comparan por valor: "doce" equivale a "12" y "tres quintos" a "3/5". Con código no se aplican estos filtros: las citas son identificadores y las preguntas, genéricas.
+
+La prioridad es mostrar poco y pertinente: a veces responderá `No consta` aunque el dato esté.
+
+**Lo que no garantiza:** los sinónimos sin palabras en común se pierden ("mayoría cualificada" frente a "tres quintos"), y compartir palabras no asegura que la cita respalde la conclusión (negaciones, excepciones). Un modelo pequeño no sustituye a leer: para extraer datos que importan, lee el documento.
 
 Ubicaciones: `línea N` en texto, código y HTML; `p. N` en PDF; `párrafo N` en Word y OpenDocument.
 
