@@ -101,6 +101,16 @@ class TestBulkRead(unittest.TestCase):
         with self.assertRaisesRegex(BudgetError, "no existe"):
             bulk_read(self.cfg, "q", [malo], backend=BackendFalso([]))
 
+    def test_una_cita_ajena_a_la_pregunta_se_descarta(self):
+        path = self._write("a.md", "Los vocales del consejo se renuevan por sorteo cada tres años\n")
+        backend = BackendFalso([
+            "- Los vocales del consejo se renuevan por sorteo cada tres años\n"
+            "  > Los vocales del consejo se renuevan por sorteo cada tres años"
+        ])
+        resultado = bulk_read(self.cfg, "¿Qué mayoría exige la reforma del estatuto?", [path], backend=backend)
+        self.assertTrue(resultado.startswith("No consta en los documentos."))
+        self.assertIn("1 con cita ajena a la pregunta", resultado)
+
     def test_lee_un_docx_y_ubica_por_parrafo(self):
         ruta = os.path.join(self.dir.name, "a.docx")
         xml = ('<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'

@@ -34,15 +34,19 @@ Lee código y documentos: texto, Markdown, CSV, JSON, **PDF**, **Word (`.docx`)*
 
 Cada afirmación de la respuesta trae una cita literal y dónde está:
 
-    - Las leyes orgánicas requieren mayoría absoluta del Congreso
-      > requerirá mayoría absoluta del Congreso, en una votación final
-      (CE.md:línea 812)
+    - La junta general requiere un quórum de dos tercios de los socios
+      > el quórum de la junta general será de 2/3 de los socios presentes
+      (estatuto.md:línea 12)
 
     Descartadas 2 afirmaciones: 1 con cita no encontrada en el documento, 1 con cifras que no están en su cita.
 
 El servidor comprueba cada cita contra el archivo y descarta lo que no encuentra. También descarta la afirmación cuyas cifras no aparecen en su cita: es el caso de citar un texto auténtico y adjuntarle un número inventado. Si no queda nada, responde `No consta en los documentos.`
 
-**Lo que no garantiza:** una cita real con una conclusión equivocada pasa la verificación, y las cifras escritas con palabras ("tres quintos") no las cubre el filtro de cifras. Un resumen de un modelo pequeño no sustituye a leer: para extraer datos que importan, lee el documento.
+**Con documentos, además, la cita tiene que venir al caso.** Una afirmación se descarta si menos del 60 % de sus palabras con contenido aparecen en su cita ("con cita que no respalda la afirmación") o si la cita no comparte ninguna palabra con la pregunta ("con cita ajena a la pregunta"). Los números se comparan por valor: "doce" equivale a "12" y "tres quintos" a "3/5". Con código no se aplican estos filtros: las citas son identificadores y las preguntas, genéricas.
+
+La prioridad es mostrar poco y pertinente: a veces responderá `No consta` aunque el dato esté.
+
+**Lo que no garantiza:** los sinónimos sin palabras en común se pierden ("mayoría cualificada" frente a "tres quintos"), y compartir palabras no asegura que la cita respalde la conclusión (negaciones, excepciones). Un modelo pequeño no sustituye a leer: para extraer datos que importan, lee el documento.
 
 Ubicaciones: `línea N` en texto, código y HTML; `p. N` en PDF; `párrafo N` en Word y OpenDocument.
 
@@ -314,6 +318,18 @@ Lo que enseña:
 - **Pero no basta.** Los modelos pequeños adjuntan citas reales que no tienen relación con la afirmación ("plazo de tres años" apoyado en un artículo sobre otra cosa). La respuesta buena suele estar, enterrada entre varias afirmaciones "verificadas" irrelevantes.
 - `qwen2.5-coder:3b` apenas sigue el formato con prosa: con documentos, usa un modelo generalista.
 - Ninguna consulta agotó el tiempo: el documento de 1 905 líneas tardó entre 45 y 160 s.
+
+**Con el filtro de pertinencia** (cita que respalda la afirmación y toca la pregunta), las mismas preguntas y ventana de 8192:
+
+| Modelo | Correctas y respaldadas | Verdaderas pero no responden | Falsas | "No consta" correctos (de 3) | Tiempo total | Reparto |
+|---|---|---|---|---|---|---|
+| `gemma3:4b` | 2 | 4 | 0 | 2 | 711 s | 54 % CPU / 46 % GPU |
+| `llama3.2:3b` | 2 | 1 | 0 | 2 | 821 s | 29 % CPU / 71 % GPU |
+| `qwen2.5:3b` | 0 | 0 | 0 | 3 | 293 s | 100 % GPU |
+| `qwen2.5-coder:3b` | 0 | 0 | 0 | 1 | 356 s | 100 % GPU |
+
+- **Ninguna afirmación falsa llega ya a la salida.** Las que pasan dicen lo que dice su cita. Las "verdaderas pero no responden" comparten palabras genéricas con la pregunta ("Constitución", "Tribunal").
+- **El filtro descarta poco** (1–10 afirmaciones por modelo). Lo que se pierde de verdad son las afirmaciones **sin cita** (64–155): el modelo escribe la viñeta y omite la línea `>`. Ahí está el margen de mejora, en el prompt, no en más filtros.
 
 Por eso el hook sigue sin bloquear documentos: para extraer datos de un documento largo, léelo.
 

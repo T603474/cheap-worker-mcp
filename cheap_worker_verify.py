@@ -6,13 +6,19 @@ haya encontrado en el archivo. El modelo local inventa: al resumir una ficha
 rellenó con cifras una tabla que en el original estaba vacía. Aquí se comprueba
 cada afirmación y se descarta, contándola, lo que no se puede respaldar.
 
-Límites conocidos: una cita real con una interpretación equivocada pasa, y las
-cifras escritas con palabras no las cubre el filtro de cifras.
+Con documentos, además, la cita debe respaldar la afirmación y tocar la
+pregunta (cheap_worker_pertinencia), y los números se comparan por valor.
+
+Límites conocidos: los sinónimos sin palabras en común se pierden, y compartir
+palabras no garantiza respaldo lógico.
 """
 
 import re
 from collections import Counter
 from dataclasses import dataclass
+
+from cheap_worker_extract import es_codigo
+from cheap_worker_pertinencia import respalda, toca_pregunta, valores
 
 MIN_PALABRAS_CITA = 3
 
@@ -23,6 +29,8 @@ MOTIVOS = {
     "cita_corta": f"con cita de menos de {MIN_PALABRAS_CITA} palabras",
     "cita_no_encontrada": "con cita no encontrada en el documento",
     "cifras_no_respaldadas": "con cifras que no están en su cita",
+    "cita_no_respalda": "con cita que no respalda la afirmación",
+    "cita_ajena": "con cita ajena a la pregunta",
 }
 
 _MARCAS = str.maketrans({c: " " for c in "*_`\"“”«»‘’"})
@@ -120,7 +128,7 @@ def _indice(tramo):
     return " ".join(partes), inicios
 
 
-def verificar(afirmaciones, tramos):
+def verificar(afirmaciones, tramos, pregunta=""):
     indices = [(t, *_indice(t)) for t in tramos]
     verificadas = []
     descartes = Counter()
@@ -152,10 +160,24 @@ def verificar(afirmaciones, tramos):
         if hallada is None:
             descartes["cita_no_encontrada"] += 1
             continue
-        if not cifras(afirmacion.texto) <= cifras(afirmacion.cita):
+        tramo, linea = hallada
+        documento = not es_codigo(tramo.ruta)
+        # En documentos se comparan valores: "doce" equivale a "12". En código,
+        # solo cifras en dígitos: "dos valores" frente a `return a, b` no es un
+        # número inventado.
+        if documento:
+            numeros_ok = valores(afirmacion.texto) <= valores(afirmacion.cita)
+        else:
+            numeros_ok = cifras(afirmacion.texto) <= cifras(afirmacion.cita)
+        if not numeros_ok:
             descartes["cifras_no_respaldadas"] += 1
             continue
-        tramo, linea = hallada
+        if documento and not respalda(afirmacion.texto, afirmacion.cita):
+            descartes["cita_no_respalda"] += 1
+            continue
+        if documento and not toca_pregunta(pregunta, afirmacion.cita):
+            descartes["cita_ajena"] += 1
+            continue
         cita_mostrada = afirmacion.cita.strip().strip(".…").strip()
         verificadas.append(Verificada(
             afirmacion.texto, cita_mostrada, tramo.ruta,
@@ -164,7 +186,7 @@ def verificar(afirmaciones, tramos):
     return verificadas, descartes
 
 
-def verificar_respuesta(texto, tramos):
+def verificar_respuesta(texto, tramos, pregunta=""):
     """Analiza y verifica una respuesta completa del modelo (un chunk).
 
     Añade el descarte `sin_formato` cuando la respuesta no está vacía, no es
@@ -173,7 +195,7 @@ def verificar_respuesta(texto, tramos):
     documentos.", que es lo que se compone cuando no hay afirmaciones.
     """
     afirmaciones = analizar_respuesta(texto)
-    verificadas, descartes = verificar(afirmaciones, tramos)
+    verificadas, descartes = verificar(afirmaciones, tramos, pregunta)
     if not afirmaciones:
         limpio = texto.strip()
         if limpio and not _es_no_consta(limpio):

@@ -10,8 +10,8 @@ preguntas.json es una lista de objetos:
    "esperado": ["fragmento que debe aparecer", ...]}
 
 Un caso `dato` u `orientacion` acierta si todos sus fragmentos esperados
-aparecen entre las afirmaciones verificadas. Un caso `sin_respuesta` acierta si
-la respuesta es "No consta".
+aparecen en las citas de las afirmaciones verificadas. Un caso `sin_respuesta`
+acierta si la respuesta es "No consta".
 
 Las preguntas sobre material propio no deben ir al repositorio: guárdalas en
 .cache/eval/, que git ignora. Con --salida se vuelca cada respuesta para
@@ -50,13 +50,26 @@ def descartadas(resultado):
     return int(m.group(1)) if m else 0
 
 
+def citas_verificadas(resultado):
+    """Texto de las líneas de cita (`>`) de las afirmaciones verificadas.
+
+    Se puntúa por la cita y no por la afirmación: el modelo puede escribir el
+    dato correcto en la afirmación y adjuntar una cita que no lo contiene.
+    """
+    return " ".join(
+        linea.strip()[1:].strip()
+        for linea in parte_verificada(resultado).splitlines()
+        if linea.strip().startswith(">")
+    )
+
+
 def acierta(caso, resultado):
     verificada = parte_verificada(resultado)
     if caso["tipo"] == "sin_respuesta":
         if "sin el formato pedido" in resultado:
             return False
         return verificada.startswith("No consta")
-    texto = normalizar(verificada)
+    texto = normalizar(citas_verificadas(resultado))
     return all(normalizar(f) in texto for f in caso["esperado"])
 
 
