@@ -103,7 +103,7 @@ Todo se ajusta en la sección `env` de `.mcp.json`. Ninguna variable es obligato
 | `SHUNT_API_BASE` | `http://localhost:11434/v1` | Base OpenAI-compatible |
 | `SHUNT_API_KEY` | *(vacío)* | Bearer, si el backend lo exige |
 | `SHUNT_MAX_CTX_TOKENS` | `4096` | Ventana **real** del backend |
-| `SHUNT_RESERVE_EXTRA` | `256` | Margen para el prompt de sistema |
+| `SHUNT_RESERVE_EXTRA` | `512` | Margen para el texto fijo de los mensajes (prompt de sistema, ejemplo y recordatorio) |
 | `SHUNT_TIMEOUT` | `600` | Segundos por llamada |
 | `SHUNT_MIN_LINES` | `350` | Umbral en líneas del hook de bloqueo — ver [Cambiar el umbral](#cambiar-el-umbral) |
 | `SHUNT_CACHE_DIR` | `.cache/cheap-worker` | Dónde se guardan las respuestas cacheadas |

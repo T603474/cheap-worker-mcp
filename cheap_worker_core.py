@@ -133,7 +133,7 @@ class Config:
                 max_ctx_tokens=int(env.get("SHUNT_MAX_CTX_TOKENS", "4096")),
                 output_bulk=int(env.get("SHUNT_MAX_OUTPUT_BULK", salida or "512")),
                 output_code=int(env.get("SHUNT_MAX_OUTPUT_CODE", salida or "2048")),
-                reserve_extra=int(env.get("SHUNT_RESERVE_EXTRA", "256")),
+                reserve_extra=int(env.get("SHUNT_RESERVE_EXTRA", "512")),
                 temp_bulk=float(env.get("SHUNT_TEMP_BULK", "0.2")),
                 temp_code=float(env.get("SHUNT_TEMP_CODE", "0.0")),
                 timeout=int(env.get("SHUNT_TIMEOUT", "600")),
@@ -362,8 +362,8 @@ def _clave_cache(perfil: Perfil, question: str, bloques, faltan) -> str:
     otro resumen.
     """
     h = hashlib.sha256()
-    partes = [FORMATO_RESPUESTA, perfil.modelo, str(perfil.salida_max), str(perfil.temperatura),
-              question, *bloques, *faltan]
+    partes = [FORMATO_RESPUESTA, VARIANTE_PROMPT, perfil.modelo, str(perfil.salida_max),
+              str(perfil.temperatura), question, *bloques, *faltan]
     for parte in partes:
         h.update(parte.encode("utf-8"))
         h.update(b"\0")
@@ -440,6 +440,85 @@ SYSTEM_BULK = (
 )
 
 
+# Variantes del prompt en medición (ver docs/superpowers/specs/2026-09-15-prompt-citas-design.md).
+# Con trozos de ~7000 tokens, un modelo pequeño que lee la pregunta antes del
+# documento la olvida y resume; y a veces "cita" su propia frase. Las variantes
+# nuevas repiten la pregunta tras el documento y enseñan el formato con un
+# ejemplo inventado. La medición decide cuál queda.
+VARIANTES_PROMPT = ("actual", "pregunta_al_final", "cita_primero")
+VARIANTE_PROMPT = "actual"
+
+_EJEMPLO_DOCUMENTO = (
+    'Files: "Artículo 4. La junta se reúne dos veces al año. '
+    'Sus acuerdos requieren mayoría simple."\n'
+)
+
+SYSTEM_BULK_PREGUNTA_AL_FINAL = (
+    "You answer ONE question using ONLY the files the user sends. Never summarize the files, "
+    "never guess, never invent numbers. Answer in the language of the question.\n"
+    "For each fact that answers the question, write two lines:\n"
+    "- <the fact>\n"
+    "  > <a sentence copied character by character from the files that proves it>\n"
+    "The quote must be copied from the files, never written by you.\n"
+    "If the files do not answer the question, write only: NO CONSTA\n\n"
+    "Example.\n"
+    + _EJEMPLO_DOCUMENTO
+    + "Question: ¿Cuántas veces se reúne la junta?\n"
+    "Answer:\n"
+    "- La junta se reúne dos veces al año.\n"
+    "  > La junta se reúne dos veces al año\n"
+    "Question: ¿Quién preside la junta?\n"
+    "Answer:\n"
+    "NO CONSTA"
+)
+
+SYSTEM_BULK_CITA_PRIMERO = (
+    "You answer ONE question using ONLY the files the user sends. Never summarize the files, "
+    "never guess, never invent numbers. Answer in the language of the question.\n"
+    "For each fact that answers the question, write two lines, quote first:\n"
+    "> <a sentence copied character by character from the files>\n"
+    "- <the fact that this sentence proves>\n"
+    "The quote must be copied from the files, never written by you.\n"
+    "If the files do not answer the question, write only: NO CONSTA\n\n"
+    "Example.\n"
+    + _EJEMPLO_DOCUMENTO
+    + "Question: ¿Cuántas veces se reúne la junta?\n"
+    "Answer:\n"
+    "> La junta se reúne dos veces al año\n"
+    "- La junta se reúne dos veces al año.\n"
+    "Question: ¿Quién preside la junta?\n"
+    "Answer:\n"
+    "NO CONSTA"
+)
+
+_RECORDATORIO = {
+    "pregunta_al_final": (
+        "Answer only this question, do not summarize. Every fact needs its line \"> \" with a "
+        "quote copied from the files. If the files do not answer it, write NO CONSTA.\nAnswer:\n"
+    ),
+    "cita_primero": (
+        "Answer only this question, do not summarize. For every fact, first the line \"> \" with "
+        "a quote copied from the files, then the line \"- \" with the fact. If the files do not "
+        "answer it, write NO CONSTA.\nAnswer:\n"
+    ),
+}
+
+_SISTEMA = {
+    "pregunta_al_final": SYSTEM_BULK_PREGUNTA_AL_FINAL,
+    "cita_primero": SYSTEM_BULK_CITA_PRIMERO,
+}
+
+
+def _mensajes_bulk(pregunta, texto_bloque, variante):
+    """(system, user) de una llamada de bulk_read según la variante del prompt."""
+    if variante == "actual":
+        return SYSTEM_BULK, f"Question: {pregunta}\n\nFiles:\n{texto_bloque}"
+    if variante in _SISTEMA:
+        usuario = f"Files:\n{texto_bloque}\n\nQuestion: {pregunta}\n{_RECORDATORIO[variante]}"
+        return _SISTEMA[variante], usuario
+    raise ValueError(f"Variante de prompt desconocida: {variante}")
+
+
 def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
     """Analiza archivos con el modelo barato. El frontier nunca ve su contenido.
 
@@ -469,7 +548,8 @@ def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
     verificadas = []
     descartes = Counter()
     for bloque in troceado.blocks:
-        respuesta = backend.chat(perfil, SYSTEM_BULK, f"Question: {question}\n\nFiles:\n{bloque.texto}")
+        sistema, usuario = _mensajes_bulk(question, bloque.texto, VARIANTE_PROMPT)
+        respuesta = backend.chat(perfil, sistema, usuario)
         buenas, malas = verificar_respuesta(respuesta, bloque.tramos, question)
         verificadas.extend(buenas)
         descartes.update(malas)

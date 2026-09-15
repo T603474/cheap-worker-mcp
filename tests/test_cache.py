@@ -81,6 +81,13 @@ class TestCache(unittest.TestCase):
             nuevo = bulk_read(cfg, "q", [self.archivo], backend=BackendFalso([respuesta("actual")]))
         self.assertIn("- actual", nuevo)
 
+    def test_cambiar_la_variante_de_prompt_invalida_la_entrada(self):
+        cfg = self._cfg()
+        bulk_read(cfg, "q", [self.archivo], backend=BackendFalso([respuesta("antiguo")]))
+        with mock.patch.object(cheap_worker_core, "VARIANTE_PROMPT", "pregunta_al_final"):
+            nuevo = bulk_read(cfg, "q", [self.archivo], backend=BackendFalso([respuesta("actual")]))
+        self.assertIn("- actual", nuevo)
+
     def test_con_la_cache_apagada_siempre_se_llama_al_modelo(self):
         cfg = self._cfg(SHUNT_CACHE_MAX="0")
         bulk_read(cfg, "q", [self.archivo], backend=BackendFalso([respuesta("uno")]))

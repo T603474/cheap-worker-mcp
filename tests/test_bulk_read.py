@@ -2,8 +2,12 @@ import os
 import tempfile
 import unittest
 import zipfile
+from unittest import mock
 
-from cheap_worker_core import BudgetError, Config, SYSTEM_BULK, bulk_read
+import cheap_worker_core
+from cheap_worker_core import (
+    BudgetError, Config, SYSTEM_BULK, VARIANTES_PROMPT, _mensajes_bulk, bulk_read,
+)
 from tests.helpers import BackendFalso
 
 
@@ -121,6 +125,53 @@ class TestBulkRead(unittest.TestCase):
         backend = BackendFalso(["- Treinta días\n  > plazo será de treinta días"])
         resultado = bulk_read(self.cfg, "¿Plazo?", [ruta], backend=backend)
         self.assertIn(f"({ruta}:párrafo 1)", resultado)
+
+
+class TestMensajesBulk(unittest.TestCase):
+    PREGUNTA = "¿Cuántas veces se reúne el consejo?"
+    TEXTO = '<file path="a.md">\nEl consejo se reúne tres veces.\n</file>\n'
+
+    def test_actual_reproduce_el_formato_de_siempre(self):
+        sistema, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "actual")
+        self.assertIs(sistema, SYSTEM_BULK)
+        self.assertEqual(usuario, f"Question: {self.PREGUNTA}\n\nFiles:\n{self.TEXTO}")
+
+    def test_la_pregunta_va_despues_del_documento(self):
+        for variante in ("pregunta_al_final", "cita_primero"):
+            with self.subTest(variante=variante):
+                _, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, variante)
+                self.assertGreater(usuario.index(self.PREGUNTA), usuario.index(self.TEXTO))
+                self.assertTrue(usuario.rstrip().endswith("Answer:"))
+
+    def test_las_variantes_nuevas_llevan_ejemplo_y_no_consta(self):
+        for variante in ("pregunta_al_final", "cita_primero"):
+            with self.subTest(variante=variante):
+                sistema, _ = _mensajes_bulk(self.PREGUNTA, self.TEXTO, variante)
+                self.assertIn("Example", sistema)
+                self.assertIn("NO CONSTA", sistema)
+                self.assertIn("La junta se reúne dos veces al año", sistema)
+
+    def test_orden_del_ejemplo_segun_la_variante(self):
+        normal, _ = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
+        primero, _ = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "cita_primero")
+        self.assertLess(normal.index("- La junta se reúne"), normal.index("> La junta se reúne"))
+        self.assertLess(primero.index("> La junta se reúne"), primero.index("- La junta se reúne"))
+
+    def test_variante_desconocida(self):
+        with self.assertRaises(ValueError):
+            _mensajes_bulk(self.PREGUNTA, self.TEXTO, "otra")
+
+    def test_bulk_read_usa_la_variante_activa(self):
+        with tempfile.TemporaryDirectory() as d:
+            ruta = os.path.join(d, "a.md")
+            with open(ruta, "w", encoding="utf-8") as f:
+                f.write("texto sin relación\n")
+            cfg = Config.from_env({"SHUNT_CACHE_MAX": "0"})
+            backend = BackendFalso(["NO CONSTA"])
+            with mock.patch.object(cheap_worker_core, "VARIANTE_PROMPT", "pregunta_al_final"):
+                bulk_read(cfg, "¿Plazo?", [ruta], backend=backend)
+            self.assertIs(backend.llamadas[0]["system"], cheap_worker_core.SYSTEM_BULK_PREGUNTA_AL_FINAL)
+            self.assertTrue(backend.llamadas[0]["user"].rstrip().endswith("Answer:"))
 
 
 if __name__ == "__main__":
