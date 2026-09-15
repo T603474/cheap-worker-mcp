@@ -275,6 +275,17 @@ class TestPertinencia(unittest.TestCase):
                                           [linea], ruta="modulo.py")
         self.assertEqual((len(verificadas), descartes), (1, Counter()))
 
+    def test_ejemplo_del_readme_se_verifica(self):
+        """El par claim/cita del ejemplo de "Qué lee bulk_read y qué garantiza"
+        (README.md) tiene que pasar los filtros de pertinencia: cobertura,
+        toca_pregunta y valores. Texto inventado, no una norma real."""
+        linea = "el quórum de la junta general será de 2/3 de los socios presentes"
+        verificadas, descartes = self.una(
+            "¿Qué quórum exige la junta general?",
+            "La junta general requiere un quórum de dos tercios de los socios",
+            linea, [linea], ruta="estatuto.md")
+        self.assertEqual((len(verificadas), descartes), (1, Counter()))
+
     def test_sin_pregunta_no_descarta_por_ajena(self):
         linea = "Los vocales del consejo se renuevan por sorteo cada tres años"
         verificadas, _ = verificar(

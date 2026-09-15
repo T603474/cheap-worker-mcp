@@ -34,9 +34,9 @@ Lee código y documentos: texto, Markdown, CSV, JSON, **PDF**, **Word (`.docx`)*
 
 Cada afirmación de la respuesta trae una cita literal y dónde está:
 
-    - Las leyes orgánicas requieren mayoría absoluta del Congreso
-      > requerirá mayoría absoluta del Congreso, en una votación final
-      (CE.md:línea 812)
+    - La junta general requiere un quórum de dos tercios de los socios
+      > el quórum de la junta general será de 2/3 de los socios presentes
+      (estatuto.md:línea 12)
 
     Descartadas 2 afirmaciones: 1 con cita no encontrada en el documento, 1 con cifras que no están en su cita.
 
