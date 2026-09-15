@@ -67,8 +67,9 @@ DENOMINADORES = {
 UNO = {"un": 1, "una": 1, "uno": 1}
 
 _SEPARADOR = re.compile(r"[^0-9a-z]+")
-_FRACCION = re.compile(r"(?<![\d.,])(\d+)\s*/\s*(\d+)(?![\d.,])")
+_FRACCION = re.compile(r"(?<![\d.,/])(\d+)\s*/\s*(\d+)(?![\d.,/])")
 _CIFRA = re.compile(r"\d+(?:[.,]\d+)*")
+_PUNTUACION = re.compile(r"[,;:.()\[\]]")
 
 
 def _plegar(texto):
@@ -81,10 +82,11 @@ def _palabras(texto):
 
 
 def palabras_clave(texto):
-    """Palabras con contenido: sin vacías, sin cifras, de al menos 3 caracteres."""
+    """Palabras con contenido: sin vacías, sin cifras, sin números en letras, de al menos 3 caracteres."""
+    palabras_numericas = frozenset(list(UNIDADES.keys()) + list(DECENAS.keys()) + list(CENTENAS.keys()) + ["mil", "mitad"])
     return [
         p for p in _palabras(texto)
-        if len(p) >= MIN_LONGITUD_PALABRA and p not in PALABRAS_VACIAS and not p.isdigit()
+        if len(p) >= MIN_LONGITUD_PALABRA and p not in PALABRAS_VACIAS and not p.isdigit() and p not in palabras_numericas
     ]
 
 
@@ -120,33 +122,92 @@ def toca_pregunta(pregunta, cita):
 
 
 def _leer_numero(palabras, i):
-    """Número escrito con palabras a partir de la posición i: (valor, siguiente)."""
+    """Número escrito con palabras a partir de la posición i: (valor, siguiente).
+
+    Gramática: una frase numérica consiste en:
+    - Inicio: CENTENAS | DECENAS | UNIDADES
+    - Tras CENTENAS: DECENAS | UNIDADES | "mil"
+    - Tras DECENAS: "y" + (UNIDADES 1..9 | UNO) | "mil" | stop
+    - Tras UNIDADES/y+unit: "mil" | stop
+    - "mil": reinicia con CENTENAS/DECENAS/UNIDADES
+    - Cualquier otro: stop
+    """
     total = 0
     actual = 0
-    leido = False
+    step = None
     j = i
+
     while j < len(palabras):
         p = palabras[j]
-        if p in CENTENAS:
-            actual += CENTENAS[p]
-        elif p in DECENAS:
-            actual += DECENAS[p]
-        elif p in UNIDADES:
-            actual += UNIDADES[p]
-        elif p == "mil":
-            total += (actual or 1) * 1000
-            actual = 0
-        elif p in UNO and leido:
-            actual += 1
-        elif p == "y" and leido and j + 1 < len(palabras) and (
-            palabras[j + 1] in UNIDADES or palabras[j + 1] in UNO
-        ):
-            pass
+
+        if step is None or step == 100:
+            # Inicio o tras "mil": aceptar CENTENAS, DECENAS, UNIDADES, o "mil" (tras CENTENAS)
+            if p in CENTENAS:
+                actual += CENTENAS[p]
+                step = 100
+                j += 1
+                continue
+            elif p in DECENAS:
+                actual += DECENAS[p]
+                step = 10
+                j += 1
+                continue
+            elif p in UNIDADES:
+                actual += UNIDADES[p]
+                step = 1
+                j += 1
+                continue
+            elif p == "mil" and step == 100:
+                # "mil" después de CENTENAS: multiplica y reinicia
+                total += (actual or 1) * 1000
+                actual = 0
+                step = None
+                j += 1
+                continue
+            else:
+                break
+
+        elif step == 10:
+            # Tras DECENAS: aceptar UNIDADES (1-9), "y"+unit, o "mil"
+            if p in DECENAS:
+                break  # No dos DECENAS seguidas
+            elif p in UNIDADES and UNIDADES[p] <= 9:
+                actual += UNIDADES[p]
+                step = 1
+                j += 1
+                continue
+            elif p == "y" and j + 1 < len(palabras):
+                siguiente = palabras[j + 1]
+                valor_siguiente = UNIDADES.get(siguiente, UNO.get(siguiente))
+                if valor_siguiente is not None and valor_siguiente <= 9:
+                    actual += valor_siguiente
+                    step = 1
+                    j += 2
+                    continue
+            elif p == "mil":
+                total += (actual or 1) * 1000
+                actual = 0
+                step = None
+                j += 1
+                continue
+            else:
+                break
+
+        elif step == 1:
+            # Tras UNIDADES o "y"+unit: solo "mil"
+            if p == "mil":
+                total += (actual or 1) * 1000
+                actual = 0
+                step = None
+                j += 1
+                continue
+            else:
+                break
+
         else:
             break
-        leido = True
-        j += 1
-    if not leido:
+
+    if step is None and actual == 0 and total == 0:
         return None, i
     return total + actual, j
 
@@ -156,29 +217,34 @@ def valores(texto):
 
     "doce" y "12" dan "12"; "tres quintos" y "3/5" dan "3/5". Las fracciones se
     leen primero para que el numerador no cuente además como número suelto.
+    La puntuación corta frases numéricas.
     """
     plano = _plegar(texto)
     resultado = {f"{int(n)}/{int(d)}" for n, d in _FRACCION.findall(plano)}
     sin_fracciones = _FRACCION.sub(" ", plano)
     resultado.update(_CIFRA.findall(sin_fracciones))
 
-    palabras = [p for p in _palabras(sin_fracciones) if not p.isdigit()]
-    i = 0
-    while i < len(palabras):
-        p = palabras[i]
-        if p == "mitad":
-            resultado.add("1/2")
-            i += 1
-            continue
-        numerador = UNIDADES.get(p, UNO.get(p))
-        if numerador is not None and i + 1 < len(palabras) and palabras[i + 1] in DENOMINADORES:
-            resultado.add(f"{numerador}/{DENOMINADORES[palabras[i + 1]]}")
-            i += 2
-            continue
-        valor, siguiente = _leer_numero(palabras, i)
-        if valor is None:
-            i += 1
-        else:
-            resultado.add(str(valor))
-            i = siguiente
+    # Dividir por puntuación para que la puntuación corte frases
+    segmentos = _PUNTUACION.split(sin_fracciones)
+
+    for segmento in segmentos:
+        palabras = [p for p in _palabras(segmento) if not p.isdigit()]
+        i = 0
+        while i < len(palabras):
+            p = palabras[i]
+            if p == "mitad":
+                resultado.add("1/2")
+                i += 1
+                continue
+            numerador = UNIDADES.get(p, UNO.get(p))
+            if numerador is not None and i + 1 < len(palabras) and palabras[i + 1] in DENOMINADORES:
+                resultado.add(f"{numerador}/{DENOMINADORES[palabras[i + 1]]}")
+                i += 2
+                continue
+            valor, siguiente = _leer_numero(palabras, i)
+            if valor is None:
+                i += 1
+            else:
+                resultado.add(str(valor))
+                i = siguiente
     return resultado

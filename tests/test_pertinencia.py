@@ -33,7 +33,7 @@ class TestCobertura(unittest.TestCase):
     def test_cita_de_otro_asunto(self):
         afirmacion = "El recurso se resuelve en un plazo de tres años."
         cita = "A los tres años de su nombramiento, los vocales del consejo se renuevan por sorteo"
-        self.assertAlmostEqual(cobertura(afirmacion, cita), 0.4)
+        self.assertAlmostEqual(cobertura(afirmacion, cita), 0.25)
         self.assertFalse(respalda(afirmacion, cita))
 
     def test_afirmacion_con_anadidos_que_la_cita_no_dice(self):
@@ -81,6 +81,44 @@ class TestValores(unittest.TestCase):
     def test_fraccion_en_letras_equivale_a_digitos(self):
         self.assertTrue(valores("dos tercios de la junta") <= valores("mayoría de 2/3 de la junta"))
         self.assertTrue(valores("mayoría de 2/3") <= valores("dos tercios de sus miembros"))
+
+    def test_rangos_no_se_suman(self):
+        """Números separados por puntuación no se suman."""
+        self.assertEqual(valores("entre tres y cinco años"), {"3", "5"})
+        self.assertEqual(valores("artículos diez, once y doce"), {"10", "11", "12"})
+        self.assertEqual(valores("los días quince y dieciséis"), {"15", "16"})
+        self.assertEqual(valores("de los cinco, un miembro"), {"5"})
+
+    def test_numeros_compuestos(self):
+        """Números compuestos con operaciones internas."""
+        self.assertEqual(valores("ciento veinte"), {"120"})
+        self.assertEqual(valores("doscientos treinta y cuatro"), {"234"})
+        self.assertEqual(valores("treinta y un días"), {"31"})
+        self.assertEqual(valores("cien mil"), {"100000"})
+
+    def test_fechas_no_son_fracciones(self):
+        """Fechas en formato numérico no se interpretan como fracciones."""
+        result = valores("el 15/09/2026")
+        self.assertNotIn("15/9", result)
+        self.assertIn("2026", result)
+
+    def test_ley_no_es_fraccion(self):
+        """Referencias normativas con / no se interpretan como fracciones reducidas."""
+        self.assertEqual(valores("Ley 39/2015"), {"39/2015"})
+
+
+class TestPalabrasClaveSinNumeros(unittest.TestCase):
+    """Los números en letras no cuentan como palabras clave."""
+
+    def test_excluye_numeros_en_letras(self):
+        self.assertEqual(
+            palabras_clave("dicho plazo será de ocho días"),
+            ["dicho", "plazo", "dias"]
+        )
+
+    def test_respalda_con_numeros(self):
+        """Números tienen su propio filtro; las palabras se comparan por contenido."""
+        self.assertTrue(respalda("ocho días de plazo", "un plazo de 8 días"))
 
 
 if __name__ == "__main__":
