@@ -93,13 +93,12 @@ class TestInvarianteDelPresupuesto(unittest.TestCase):
     """Antes habia que mantener la coherencia a mano; ahora es estructural."""
 
     def test_el_margen_cubre_el_prompt_de_sistema(self):
-        from cheap_worker_core import SYSTEM_BULK, SYSTEM_CODE, SYSTEM_REDUCE, estimate_tokens
+        from cheap_worker_core import SYSTEM_BULK, SYSTEM_CODE, estimate_tokens
 
         cfg = Config.from_env({})
         sistema = max(
             estimate_tokens(SYSTEM_BULK),
             estimate_tokens(SYSTEM_CODE),
-            estimate_tokens(SYSTEM_REDUCE),
         )
         self.assertLessEqual(
             sistema, cfg.reserve_extra,
@@ -107,12 +106,11 @@ class TestInvarianteDelPresupuesto(unittest.TestCase):
         )
 
     def test_ninguna_herramienta_desborda_la_ventana(self):
-        from cheap_worker_core import SYSTEM_BULK, SYSTEM_CODE, SYSTEM_REDUCE, estimate_tokens
+        from cheap_worker_core import SYSTEM_BULK, SYSTEM_CODE, estimate_tokens
 
         sistema = max(
             estimate_tokens(SYSTEM_BULK),
             estimate_tokens(SYSTEM_CODE),
-            estimate_tokens(SYSTEM_REDUCE),
         )
         for ctx in ("4096", "8192", "16384"):
             cfg = Config.from_env({"SHUNT_MAX_CTX_TOKENS": ctx})

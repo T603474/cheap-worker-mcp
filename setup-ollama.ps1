@@ -52,6 +52,14 @@ if ($LASTEXITCODE -ne 0) {
 $reqVersion = & python -c "import requests; print(requests.__version__)"
 Write-Host "  OK requests $reqVersion" -ForegroundColor Green
 
+& python -c "import pypdf" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  AVISO: falta pypdf. Todo funciona salvo leer PDF. Para instalarla:" -ForegroundColor Yellow
+    Write-Host "    python -m pip install pypdf" -ForegroundColor White
+} else {
+    Write-Host "  OK pypdf (lectura de PDF)" -ForegroundColor Green
+}
+
 # --------------------------------------------------------------- 3. Ollama
 Write-Host "`n[3/5] Comprobando Ollama..." -ForegroundColor Cyan
 $ollamaCheck = & ollama --version 2>&1

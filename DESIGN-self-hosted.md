@@ -115,6 +115,11 @@ Para ampliar ventana en Ollama hay que fijarla en un Modelfile (`PARAMETER num_c
 
 ## 6. Flujo de `bulk_read`
 
+> **Nota:** el diseño de `chunk_files` y el paso reduce descritos aquí quedó
+> superado por `docs/superpowers/specs/2026-09-14-bulk-read-documentos-design.md`,
+> que sustituye la fusión por modelo por verificación de citas en código. Esta
+> sección se conserva como referencia histórica, sin reescribir.
+
 Presupuesto = `SHUNT_MAX_CTX_TOKENS - SHUNT_RESERVE_TOKENS`. La estimación de tokens usa una heurística de caracteres/4, sin introducir dependencia de tokenizador; `SHUNT_RESERVE_TOKENS` existe para absorber el error de esa aproximación.
 
 1. **Empaquetado.** Cada archivo se lee íntegro y se envuelve como `<file path="src/A.py">...</file>`. Los archivos inexistentes no abortan la llamada: se acumulan y se reportan al final. Se agrupan archivos consecutivos hasta llenar el presupuesto.

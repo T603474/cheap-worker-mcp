@@ -23,10 +23,28 @@ Dos herramientas:
 
 | Herramienta | Qué recibe | Qué devuelve |
 |---|---|---|
-| `bulk_read` | una pregunta y una lista de rutas | bullets con la respuesta |
+| `bulk_read` | una pregunta y una lista de rutas | afirmaciones con cita verificada |
 | `code_write` | una especificación y un archivo de referencia | la ruta del archivo escrito |
 
 En `code_write`, con `target`, el código generado **no vuelve**: solo la ruta y el número de líneas. Ahí está el ahorro.
+
+## Qué lee `bulk_read` y qué garantiza
+
+Lee código y documentos: texto, Markdown, CSV, JSON, **PDF**, **Word (`.docx`)**, **OpenDocument (`.odt`)** y **HTML**. Para PDF hace falta `pypdf` (`python -m pip install pypdf`); sin ella funciona todo lo demás. Los PDF escaneados no tienen texto y se rechazan con ese motivo: no hay OCR.
+
+Cada afirmación de la respuesta trae una cita literal y dónde está:
+
+    - Las leyes orgánicas requieren mayoría absoluta del Congreso
+      > requerirá mayoría absoluta del Congreso, en una votación final
+      (CE.md:línea 812)
+
+    Descartadas 2 afirmaciones: 1 con cita no encontrada en el documento, 1 con cifras que no están en su cita.
+
+El servidor comprueba cada cita contra el archivo y descarta lo que no encuentra. También descarta la afirmación cuyas cifras no aparecen en su cita: es el caso de citar un texto auténtico y adjuntarle un número inventado. Si no queda nada, responde `No consta en los documentos.`
+
+**Lo que no garantiza:** una cita real con una conclusión equivocada pasa la verificación, y las cifras escritas con palabras ("tres quintos") no las cubre el filtro de cifras. Un resumen de un modelo pequeño no sustituye a leer: para extraer datos que importan, lee el documento.
+
+Ubicaciones: `línea N` en texto, código y HTML; `p. N` en PDF; `párrafo N` en Word y OpenDocument.
 
 ## Ahorro medido
 
@@ -35,8 +53,10 @@ Sobre `cheap_worker_core.py`, 473 líneas, con `qwen2.5-coder:7b`:
 | | Tokens |
 |---|---|
 | Lectura directa por el modelo caro | 4179 |
-| Resumen que recibe en su lugar | 415 |
+| Lo que recibe en su lugar (afirmaciones con cita) | 415 |
 | **Ahorro** | **3764 (90%)** |
+
+*Medido antes del cambio a verificación de citas, con el resumen y la llamada de fusión de entonces; pendiente de remedir con el flujo actual.*
 
 ## Instalación
 
@@ -58,7 +78,7 @@ No genera ningún archivo de código: el servidor vive en el repositorio y se ve
 ```powershell
 .\test-mcp-ollama.ps1     # prueba extremo a extremo
 .\test-mcp.ps1            # banco de pruebas: mide el ahorro real
-python -m unittest discover -s tests -t . -v   # 98 tests
+python -m unittest discover -s tests -t . -v
 ```
 
 También se puede llamar a mano, sin construir mensajes JSON-RPC:
@@ -82,7 +102,7 @@ Todo se ajusta en la sección `env` de `.mcp.json`. Ninguna variable es obligato
 | `SHUNT_RESERVE_EXTRA` | `256` | Margen para el prompt de sistema |
 | `SHUNT_TIMEOUT` | `600` | Segundos por llamada |
 | `SHUNT_MIN_LINES` | `350` | Umbral en líneas del hook de bloqueo — ver [Cambiar el umbral](#cambiar-el-umbral) |
-| `SHUNT_CACHE_DIR` | `.cache/cheap-worker` | Dónde se guardan los resúmenes |
+| `SHUNT_CACHE_DIR` | `.cache/cheap-worker` | Dónde se guardan las respuestas cacheadas |
 | `SHUNT_CACHE_MAX` | `200` | Entradas en caché; `0` la desactiva |
 
 Y lo que cambia por herramienta, porque las dos piden cosas opuestas:
@@ -160,16 +180,16 @@ Lo que sí se ha hecho para no atarlo a Ollama:
 
 Lo que sigue siendo de Ollama y no aplica a otros motores: `setup-ollama.ps1`, `start-ollama.ps1`, `test-mcp-ollama.ps1`, y el consejo de comprobar la ventana con `ollama ps`. Con vLLM la ventana la fija `--max-model-len` al arrancar.
 
-## Caché de resúmenes
+## Caché de respuestas
 
-En una sesión de trabajo se releen los mismos archivos una y otra vez. `bulk_read` guarda cada resultado y lo reutiliza mientras nada cambie:
+En una sesión de trabajo se releen los mismos archivos una y otra vez. `bulk_read` guarda cada resultado (las afirmaciones ya verificadas) y lo reutiliza mientras nada cambie:
 
 ```
 primera llamada   24 193 ms
 segunda llamada        956 ms      (y casi todo es arrancar Python)
 ```
 
-La clave es la huella de los bloques que se le mandan al modelo, más el modelo y el techo de salida. Eso significa que se invalida sola: si tocas un archivo, cambia su bloque y cambia la clave. Cambiar de modelo o de techo también produce entradas distintas, porque darían otro resumen.
+La clave es la huella de los bloques que se le mandan al modelo, más el modelo y el techo de salida. Eso significa que se invalida sola: si tocas un archivo, cambia su bloque y cambia la clave. Cambiar de modelo o de techo también produce entradas distintas, porque darían otra respuesta.
 
 La caché es una optimización, nunca un requisito: si el directorio no se puede escribir, se recalcula y ya. Se poda sola al llegar a `SHUNT_CACHE_MAX` entradas, tirando las más antiguas.
 
@@ -177,11 +197,13 @@ La caché es una optimización, nunca un requisito: si el directorio no se puede
 
 ## Enforcement
 
-`.claude/settings.json` instala un hook `PreToolUse` sobre `Read` que **deniega** leer archivos de más de `SHUNT_MIN_LINES` líneas y redirige a `bulk_read`. El gist insiste en por qué hace falta:
+`.claude/settings.json` instala un hook `PreToolUse` sobre `Read` que **deniega** leer archivos de **código** de más de `SHUNT_MIN_LINES` líneas y redirige a `bulk_read`.
+
+Los documentos (`.md`, `.txt`, `.csv`, `.json` y cualquier extensión que no sea de código) no se bloquean. `bulk_read` se midió con código, y con prosa inventaba: al resumir una ficha de 479 líneas devolvió rellena con cifras una tabla que en el original estaba vacía. Desde entonces, la lectura de documentos pasa por la verificación de citas descrita arriba: cada afirmación se descarta si su cita no aparece literal en el archivo. Ampliar este hook para que también cubra documentos queda pendiente de medir con `eval-bulk-read.py`; hasta entonces, empujar a usarlo con ellos sin datos que lo respalden es peor que leerlos enteros. La lista de extensiones está en `EXTENSIONES_CODIGO`, en el propio hook. El gist insiste en por qué hace falta:
 
 > *"Written rules are a suggestion. A block is not."*
 
-La lectura acotada con `offset`/`limit` sigue permitida: para editar hacen falta números de línea fiables, y un resumen no los da.
+La lectura acotada con `offset`/`limit` sigue permitida: para editar hacen falta números de línea fiables, y las afirmaciones verificadas no los dan.
 
 El hook falla abierto. Ante un JSON ilegible o un archivo que no se puede abrir, deja pasar: uno roto que bloquea todo sería peor.
 
@@ -247,7 +269,7 @@ Lo que domina el tiempo es **generar**, no leer. Medido en un portátil con RTX 
 El 76% del tiempo se va escribiendo. De ahí se siguen dos cosas:
 
 - **Bajar `SHUNT_MAX_OUTPUT_TOKENS` acelera**, proporcionalmente.
-- **`SHUNT_MAX_CTX_TOKENS` debe igualar la ventana que el backend sirve de verdad.** No porque una ventana grande sea rápida —procesar la entrada es la parte barata— sino porque quedarse corto fuerza a trocear, y cada trozo es un resumen más que generar, más la llamada de fusión.
+- **`SHUNT_MAX_CTX_TOKENS` debe igualar la ventana que el backend sirve de verdad.** No porque una ventana grande sea rápida —procesar la entrada es la parte barata— sino porque quedarse corto fuerza a trocear, y cada trozo es una llamada más al modelo y más afirmaciones que verificar.
 
 Ese segundo punto es el ajuste más rentable, y es gratis. Medido sobre `cheap_worker_core.py` (473 líneas):
 
@@ -256,7 +278,11 @@ Ese segundo punto es el ajuste más rentable, y es gratis. Medido sobre `cheap_w
 | 4096 | 2 | 3 | 414 s |
 | 8192 | 1 | 1 | **126 s** |
 
-**3.3× más rápido**, y 8192 era lo que Ollama ya estaba sirviendo. Comprueba el tuyo con `ollama ps`, columna `CONTEXT`, y pon ese número. Pasarse es peor que quedarse corto: Ollama recorta en silencio.
+*Medido antes del cambio a verificación de citas: la tercera llamada con 4096 era la de fusión (reduce), que ya no existe — ahora la composición es en código. Pendiente de remedir con el flujo actual.*
+
+**3.3× más rápido.** Comprueba la ventana que sirve tu Ollama con `ollama ps`, columna `CONTEXT`, con el modelo cargado, y pon ese número. Pasarse es peor que quedarse corto: Ollama recorta en silencio **el principio** del mensaje, que es donde van las instrucciones y la pregunta. El modelo recibe entonces solo texto y lo resume, en vez de responder.
+
+Ollama sirve 4096 por defecto aunque el modelo admita más. Para subirla, fija la variable de entorno `OLLAMA_CONTEXT_LENGTH` (por ejemplo, `8192`) y reinicia Ollama. Con un modelo de 3–4B cabe en 4 GB de VRAM.
 
 **Un modelo solo va rápido si cabe entero en la VRAM.** Esa es la frontera, no el número de parámetros ni la cuantización. Medido sobre el mismo archivo y la misma pregunta:
 
@@ -269,6 +295,27 @@ Ese segundo punto es el ajuste más rentable, y es gratis. Medido sobre `cheap_w
 **5,5× de diferencia** entre caber y no caber. Bajar la cuantización sin bajar de tamaño no sirve: el Q3 sigue sin caber y encima paga más descuantización.
 
 La calidad del 3B resumiendo aguanta bien: cubre las mismas responsabilidades que el 7B, con menos anidamiento. Por eso la configuración por defecto de `.mcp.json` le da el 3B a `bulk_read`, que es lo frecuente, y reserva el 7B para `code_write`, donde la especialización en código sí se paga.
+
+### Con documentos: evaluación
+
+Medido con `eval-bulk-read.py` sobre documentos jurídicos reales en español (de 96 a 2 789 líneas): 8 preguntas con dato o respuesta conocida y 3 cuya respuesta no está en el texto, con ventana de 4096. "Acierto real" cuenta solo cuando el dato es correcto **y** la cita lo respalda, revisado a mano.
+
+| Modelo | Aciertos reales (de 8) | "No consta" correctos (de 3) | Tiempo total |
+|---|---|---|---|
+| `llama3.2:3b` | 3 | 2 | 694 s |
+| `gemma3:4b` | 2 | 1 | 833 s |
+| `qwen2.5:3b` | 1 | 3 | 389 s |
+| `qwen2.5-coder:3b` | 0 | 2 | 365 s |
+
+Lo que enseña:
+
+- **Con documentos cortos (unas 100 líneas) responden bien.** Con documentos largos, ninguno es fiable.
+- **La verificación funcionó:** ninguna cita inventada ni cifra en dígitos inventada llegó a la salida.
+- **Pero no basta.** Los modelos pequeños adjuntan citas reales que no tienen relación con la afirmación ("plazo de tres años" apoyado en un artículo sobre otra cosa). La respuesta buena suele estar, enterrada entre varias afirmaciones "verificadas" irrelevantes.
+- `qwen2.5-coder:3b` apenas sigue el formato con prosa: con documentos, usa un modelo generalista.
+- Ninguna consulta agotó el tiempo: el documento de 1 905 líneas tardó entre 45 y 160 s.
+
+Por eso el hook sigue sin bloquear documentos: para extraer datos de un documento largo, léelo.
 
 **No uses modelos de razonamiento.** `gemma4:12b` devuelve la cadena de pensamiento en un campo aparte y deja el contenido vacío: gasta el techo de salida pensando y no llega a responder. El shunt lo detecta y da un error con ese diagnóstico, pero el modelo no sirve para este papel.
 
@@ -283,6 +330,10 @@ La calidad del 3B resumiendo aguanta bien: cubre las mismas responsabilidades qu
 **`Valor no numérico en una variable SHUNT_*`** — errata en la sección `env` de `.mcp.json`.
 
 **Resúmenes que ignoran parte del archivo** — `SHUNT_MAX_CTX_TOKENS` es mayor que la ventana que el backend sirve de verdad, y está recortando en silencio. Compruébala con `ollama ps`, columna `CONTEXT`. El endpoint OpenAI-compatible de Ollama no admite `num_ctx` por petición: para ampliarla hay que fijarla en un Modelfile y publicar una variante.
+
+**`No consta` con muchas afirmaciones descartadas** — el modelo no copia las citas literalmente, o parafrasea. Compara modelos con `eval-bulk-read.py`.
+
+**`hace falta la librería pypdf`** — `python -m pip install pypdf` en el mismo Python que arranca el servidor.
 
 ## Documentos
 

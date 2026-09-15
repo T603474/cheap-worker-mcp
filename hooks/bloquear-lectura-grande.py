@@ -35,6 +35,24 @@ VOLCADORES = {"cat", "less", "more"}
 # Si aparece cualquiera de estos, el comando no es un volcado a secas.
 METACARACTERES = {"|", ">", ">>", "<", "&", ";", "&&", "||"}
 
+# Solo se bloquea código. bulk_read se diseñó y se midió con código; con prosa
+# inventaba: al resumir una ficha de 479 líneas devolvió rellena una tabla que
+# en el original estaba vacía. Desde entonces, la lectura de documentos pasa
+# por verificación de citas (cheap_worker_verify.py): cada afirmación se
+# descarta si su cita no aparece literal en el archivo. Ampliar este hook para
+# que también cubra documentos queda pendiente de medir con eval-bulk-read.py;
+# hasta entonces, empujar a usarlo con ellos sin datos que lo respalden es peor
+# que dejar leerlos enteros.
+EXTENSIONES_CODIGO = {
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".java", ".kt", ".scala",
+    ".cs", ".go", ".rs", ".c", ".h", ".cpp", ".hpp", ".cc", ".rb", ".php", ".swift",
+    ".m", ".lua", ".pl", ".r", ".sql", ".sh", ".bash", ".ps1", ".psm1", ".vue", ".svelte",
+}
+
+
+def es_codigo(ruta):
+    return os.path.splitext(ruta)[1].lower() in EXTENSIONES_CODIGO
+
 
 def permitir():
     """Sale sin decir nada: Claude Code interpreta el silencio como 'adelante'."""
@@ -65,14 +83,14 @@ def motivo(ruta, lineas, umbral, alternativa):
     return (
         f"{ruta} tiene {lineas} líneas, por encima del umbral de {umbral}. "
         "Usa la herramienta bulk_read del servidor MCP cheap worker: lee el archivo "
-        "entero con el modelo local y te devuelve un resumen, sin gastar tu "
-        f"contexto en el contenido. {alternativa}"
+        "entero con el modelo local y te devuelve afirmaciones con su cita verificada "
+        f"contra el archivo, sin gastar tu contexto en el contenido. {alternativa}"
     )
 
 
 def revisar_read(entrada, umbral):
     ruta = entrada.get("file_path")
-    if not ruta:
+    if not ruta or not es_codigo(ruta):
         permitir()
 
     # Lectura acotada: la que se usa para editar.
@@ -107,7 +125,7 @@ def revisar_bash(entrada, umbral):
         permitir()
 
     for pieza in piezas[1:]:
-        if pieza.startswith("-"):
+        if pieza.startswith("-") or not es_codigo(pieza):
             continue
         lineas = cuenta_lineas(pieza)
         if lineas is not None and lineas > umbral:

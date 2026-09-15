@@ -162,3 +162,9 @@ class TestUmbralEnLaDescripcion(unittest.TestCase):
         for valor in ("abc", "0", "-5", ""):
             with self.subTest(valor=valor):
                 self.assertIn("más de 350 líneas", self._descripcion({"SHUNT_MIN_LINES": valor}))
+
+    def test_anuncia_los_formatos_y_la_verificacion(self):
+        descripcion = self._descripcion()
+        for fragmento in ("PDF", "Word", "cita"):
+            with self.subTest(fragmento=fragmento):
+                self.assertIn(fragmento, descripcion)

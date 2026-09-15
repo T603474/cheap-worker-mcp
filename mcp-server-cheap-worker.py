@@ -100,16 +100,19 @@ def handle_tools_list(message_id: Any) -> None:
                 {
                     "name": "bulk_read",
                     "description": (
-                        f"OBLIGATORIO para archivos de más de {umbral} líneas. Lee los archivos en "
-                        "el servidor con un modelo local y devuelve bullets concisos. Úsalo en "
-                        "lugar de leer el archivo directamente."
+                        "Lee archivos de código o documentos (texto, Markdown, PDF, Word, "
+                        "OpenDocument, HTML) con un modelo local y responde a una pregunta. "
+                        f"OBLIGATORIO para archivos de código de más de {umbral} líneas. Cada "
+                        "afirmación trae una cita literal que el servidor ha encontrado en el "
+                        "archivo; lo que no puede verificar lo descarta. Para cifras que "
+                        "importan, lee el documento."
                     ),
                     "inputSchema": {
                         "type": "object",
                         "properties": {
                             "question": {
                                 "type": "string",
-                                "description": "Pregunta sobre el código",
+                                "description": "Pregunta sobre los archivos",
                             },
                             "paths": {
                                 "type": "array",
