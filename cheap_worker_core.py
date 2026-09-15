@@ -344,8 +344,12 @@ class Backend:
 
 
 # Cambia cuando cambia la forma de la respuesta: las entradas guardadas con otra
-# forma (por ejemplo, resúmenes sin verificar) no deben reutilizarse.
-FORMATO_RESPUESTA = "citas-verificadas-2"
+# forma (por ejemplo, resúmenes sin verificar) no deben reutilizarse. También
+# cuando cambian las reglas de verificación o pertinencia (cheap_worker_verify,
+# cheap_worker_pertinencia): el umbral de cobertura, la longitud de raíz, las
+# palabras vacías o el análisis de números en letras, porque una respuesta
+# calculada con las reglas antiguas puede diferir de la que darían las nuevas.
+FORMATO_RESPUESTA = "citas-verificadas-3"
 
 
 def _clave_cache(perfil: Perfil, question: str, bloques, faltan) -> str:
