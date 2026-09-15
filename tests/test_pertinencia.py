@@ -1,6 +1,28 @@
+import queue
+import threading
 import unittest
 
 from cheap_worker_pertinencia import cobertura, palabras_clave, respalda, toca_pregunta, valores
+
+
+def _valores_con_limite(texto, segundos=2):
+    """Ejecuta valores(texto) con límite de tiempo; falla por timeout en vez de colgarse.
+
+    Usa un hilo daemon (no un ThreadPoolExecutor): sus hilos no son daemon y el
+    intérprete los espera al salir con atexit, así que un hilo colgado bloquearía
+    igualmente el fin del proceso aunque el test ya haya fallado.
+    """
+    resultado = queue.Queue(maxsize=1)
+
+    def _ejecutar():
+        resultado.put(valores(texto))
+
+    hilo = threading.Thread(target=_ejecutar, daemon=True)
+    hilo.start()
+    try:
+        return resultado.get(timeout=segundos)
+    except queue.Empty:
+        raise AssertionError(f"valores({texto!r}) no terminó en {segundos}s (bucle infinito)")
 
 
 class TestPalabrasClave(unittest.TestCase):
@@ -111,6 +133,38 @@ class TestValores(unittest.TestCase):
     def test_ley_no_es_fraccion(self):
         """Referencias normativas con / no se interpretan como fracciones reducidas."""
         self.assertEqual(valores("Ley 39/2015"), {"39/2015"})
+
+    def test_y_sin_unidad_no_causa_bucle_infinito(self):
+        """'y' que no encabeza una unidad 1-9 termina la frase numérica, no cuelga."""
+        self.assertEqual(
+            _valores_con_limite("entre treinta y cuarenta días"), {"30", "40"}
+        )
+        self.assertEqual(_valores_con_limite("treinta y plazo"), {"30"})
+        self.assertEqual(
+            _valores_con_limite("los sesenta y los noventa días"), {"60", "90"}
+        )
+
+    def test_fraccion_seguida_de_punto_final(self):
+        """Un punto de fin de frase tras la fracción no la descarta."""
+        self.assertEqual(valores("mayoría de 3/5."), {"3/5"})
+        self.assertEqual(valores("una mayoría de 3/5, y"), {"3/5"})
+
+    def test_centenas_no_se_encadenan(self):
+        """Tras una palabra de CENTENAS no se acepta otra CENTENAS."""
+        self.assertEqual(valores("cien doscientos"), {"100", "200"})
+        self.assertEqual(valores("doscientos mil trescientos"), {"200300"})
+
+    def test_mil_no_se_repite(self):
+        """'mil' no puede seguir directamente a otro 'mil'."""
+        self.assertEqual(valores("mil mil"), {"1000"})
+
+
+class TestPalabrasNumericasFrozenset(unittest.TestCase):
+    def test_es_frozenset_a_nivel_de_modulo(self):
+        import cheap_worker_pertinencia as modulo
+
+        self.assertTrue(hasattr(modulo, "PALABRAS_NUMERICAS"))
+        self.assertIsInstance(modulo.PALABRAS_NUMERICAS, frozenset)
 
 
 class TestPalabrasClaveSinNumeros(unittest.TestCase):
