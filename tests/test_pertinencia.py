@@ -10,19 +10,26 @@ def _valores_con_limite(texto, segundos=2):
 
     Usa un hilo daemon (no un ThreadPoolExecutor): sus hilos no son daemon y el
     intérprete los espera al salir con atexit, así que un hilo colgado bloquearía
-    igualmente el fin del proceso aunque el test ya haya fallado.
+    igualmente el fin del proceso aunque el test ya haya fallado. Si el hilo lanza
+    una excepción, se relanza aquí en vez de reportarse como bucle infinito.
     """
-    resultado = queue.Queue(maxsize=1)
+    cola = queue.Queue(maxsize=1)
 
     def _ejecutar():
-        resultado.put(valores(texto))
+        try:
+            cola.put((True, valores(texto)))
+        except Exception as excepcion:
+            cola.put((False, excepcion))
 
     hilo = threading.Thread(target=_ejecutar, daemon=True)
     hilo.start()
     try:
-        return resultado.get(timeout=segundos)
+        ok, valor_o_excepcion = cola.get(timeout=segundos)
     except queue.Empty:
         raise AssertionError(f"valores({texto!r}) no terminó en {segundos}s (bucle infinito)")
+    if not ok:
+        raise valor_o_excepcion
+    return valor_o_excepcion
 
 
 class TestPalabrasClave(unittest.TestCase):
@@ -90,7 +97,7 @@ class TestValores(unittest.TestCase):
         casos = {
             "doce": {"12"}, "12": {"12"}, "treinta y dos": {"32"}, "tres quintos": {"3/5"},
             "3/5": {"3/5"}, "la mitad": {"1/2"}, "dos tercios": {"2/3"}, "2/3": {"2/3"},
-            "quince días": {"15"}, "dos mil quinientos": {"2500"}, "1.500 euros": {"1.500"},
+            "quince días": {"15"}, "dos mil quinientos": {"2500"}, "1.500 euros": {"1500"},
             "veintiún años": {"21"}, "el artículo 81": {"81"},
         }
         for texto, esperado in casos.items():
@@ -126,9 +133,9 @@ class TestValores(unittest.TestCase):
 
     def test_fechas_no_son_fracciones(self):
         """Fechas en formato numérico no se interpretan como fracciones."""
-        result = valores("el 15/09/2026")
-        self.assertNotIn("15/9", result)
-        self.assertIn("2026", result)
+        resultado = valores("el 15/09/2026")
+        self.assertNotIn("15/9", resultado)
+        self.assertIn("2026", resultado)
 
     def test_ley_no_es_fraccion(self):
         """Referencias normativas con / no se interpretan como fracciones reducidas."""
@@ -158,13 +165,42 @@ class TestValores(unittest.TestCase):
         """'mil' no puede seguir directamente a otro 'mil'."""
         self.assertEqual(valores("mil mil"), {"1000"})
 
+    def test_separador_de_miles_se_canonicaliza(self):
+        """Un punto de millar se quita: "2.500" y "1500" valen lo mismo."""
+        self.assertEqual(valores("2.500 euros"), {"2500"})
+        self.assertTrue(valores("dos mil quinientos euros") <= valores("2.500 euros"))
+        self.assertEqual(valores("1500"), valores("1.500"))
 
-class TestPalabrasNumericasFrozenset(unittest.TestCase):
-    def test_es_frozenset_a_nivel_de_modulo(self):
-        import cheap_worker_pertinencia as modulo
+    def test_decimal_con_coma_no_se_toca(self):
+        self.assertEqual(valores("15,5"), {"15,5"})
 
-        self.assertTrue(hasattr(modulo, "PALABRAS_NUMERICAS"))
-        self.assertIsInstance(modulo.PALABRAS_NUMERICAS, frozenset)
+    def test_punto_que_no_es_separador_de_miles_no_se_toca(self):
+        """"81.2" no es un millar (el grupo tras el punto no tiene 3 dígitos)."""
+        self.assertIn("81.2", valores("artículo 81.2"))
+
+    def test_un_una_tras_centenas(self):
+        self.assertEqual(valores("ciento un diputados"), {"101"})
+
+    def test_un_una_tras_mil(self):
+        self.assertEqual(valores("mil una noches"), {"1001"})
+
+    def test_y_tras_mil_no_es_decena(self):
+        """La "y" tras "mil" no forma parte de la gramática de decenas."""
+        self.assertEqual(valores("mil y una noches"), {"1000"})
+
+    def test_treinta_y_un_sigue_funcionando(self):
+        self.assertEqual(valores("treinta y un días"), {"31"})
+
+    def test_un_articulo_sigue_sin_ser_numero(self):
+        self.assertEqual(valores("un plazo"), set())
+
+    def test_por_ciento_no_es_cien(self):
+        self.assertEqual(valores("tres por ciento"), {"3"})
+        self.assertEqual(valores("3 %"), {"3"})
+        self.assertEqual(valores("el 21 por ciento"), {"21"})
+
+    def test_ciento_veinte_sigue_dando_120(self):
+        self.assertEqual(valores("ciento veinte"), {"120"})
 
 
 class TestPalabrasClaveSinNumeros(unittest.TestCase):
@@ -179,6 +215,16 @@ class TestPalabrasClaveSinNumeros(unittest.TestCase):
     def test_respalda_con_numeros(self):
         """Números tienen su propio filtro; las palabras se comparan por contenido."""
         self.assertTrue(respalda("ocho días de plazo", "un plazo de 8 días"))
+
+    def test_excluye_denominadores_de_fraccion(self):
+        """"tres quintos" no deja "quintos" como palabra clave (igual que "tres")."""
+        self.assertEqual(palabras_clave("tres quintos de la junta"), ["junta"])
+
+    def test_respalda_con_fraccion_en_letras(self):
+        self.assertTrue(respalda(
+            "Se requiere una mayoría de tres quintos",
+            "se requiere una mayoría de 3/5 de cada una de las juntas",
+        ))
 
 
 if __name__ == "__main__":

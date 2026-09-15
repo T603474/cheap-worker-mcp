@@ -68,7 +68,8 @@ UNO = {"un": 1, "una": 1, "uno": 1}
 
 # Palabras que forman números en letras: las usa palabras_clave para excluirlas.
 PALABRAS_NUMERICAS = frozenset(
-    list(UNIDADES.keys()) + list(DECENAS.keys()) + list(CENTENAS.keys()) + ["mil", "mitad"]
+    list(UNIDADES.keys()) + list(DECENAS.keys()) + list(CENTENAS.keys())
+    + list(DENOMINADORES.keys()) + ["mil", "mitad"]
 )
 
 _SEPARADOR = re.compile(r"[^0-9a-z]+")
@@ -76,6 +77,9 @@ _SEPARADOR = re.compile(r"[^0-9a-z]+")
 # no acaba pegada a otra cifra/"/" ni a un "." o "," seguido de cifra (decimales).
 _FRACCION = re.compile(r"(?<![/\d])(?<!\d[.,])(\d+)\s*/\s*(\d+)(?![/\d]|[.,]\d)")
 _CIFRA = re.compile(r"\d+(?:[.,]\d+)*")
+# Grupos de 3 dígitos separados por puntos de millar: "2.500", "1.500.000".
+# "81.2" no encaja (el grupo tras el punto no tiene 3 dígitos): se deja igual.
+_MILES = re.compile(r"^\d{1,3}(?:\.\d{3})+$")
 _PUNTUACION = re.compile(r"[,;:.()\[\]]")
 
 
@@ -132,96 +136,117 @@ def _leer_numero(palabras, i):
     """Número escrito con palabras a partir de la posición i: (valor, siguiente).
 
     Gramática: una frase numérica consiste en:
-    - Inicio (step None): CENTENAS | DECENAS | UNIDADES | "mil"
-    - Tras "mil" (step "mil"): CENTENAS | DECENAS | UNIDADES (no otro "mil" seguido)
-    - Tras CENTENAS (step 100): DECENAS | UNIDADES | "mil" (no otra CENTENAS)
-    - Tras DECENAS (step 10): "y" + (UNIDADES 1..9 | UNO) | "mil" | stop
-    - Tras UNIDADES/"y"+unit (step 1): "mil" | stop
-    - "mil": multiplica lo acumulado, reinicia el acumulador y pasa a step "mil"
+    - Inicio (paso None): CENTENAS | DECENAS | UNIDADES | "mil"
+      ("cien"/"ciento" precedida de "por" no cuenta: "por ciento" es una unidad,
+      no la cifra 100)
+    - Tras "mil" (paso "mil"): CENTENAS | DECENAS | UNIDADES | UNO
+      ("mil una noches" → 1001; no otro "mil" seguido; la "y" tras "mil" no
+      forma parte de la gramática de decenas, así que "mil y una" para en "mil")
+    - Tras CENTENAS (paso 100): DECENAS | UNIDADES | UNO | "mil"
+      ("ciento un diputados" → 101; no otra CENTENAS)
+    - Tras DECENAS (paso 10): (UNIDADES 1..9, con o sin "y" delante) | UNO tras
+      "y" | "mil" | stop ("treinta cinco" y "treinta y cinco" valen igual;
+      "treinta y un días" → 31)
+    - Tras UNIDADES/UNO/"y"+unidad (paso 1): "mil" | stop
+    - "mil": multiplica lo acumulado, reinicia el acumulador y pasa a paso "mil"
     - Cualquier otro: stop
     """
     total = 0
     actual = 0
-    step = None
+    paso = None
     j = i
 
     while j < len(palabras):
         p = palabras[j]
 
-        if step is None:
+        if paso is None:
             # Inicio de frase: CENTENAS, DECENAS, UNIDADES o "mil"
             if p in CENTENAS:
+                if j > 0 and palabras[j - 1] == "por":
+                    break  # "por ciento" es una unidad, no la cifra 100
                 actual += CENTENAS[p]
-                step = 100
+                paso = 100
                 j += 1
                 continue
             elif p in DECENAS:
                 actual += DECENAS[p]
-                step = 10
+                paso = 10
                 j += 1
                 continue
             elif p in UNIDADES:
                 actual += UNIDADES[p]
-                step = 1
+                paso = 1
                 j += 1
                 continue
             elif p == "mil":
                 total += (actual or 1) * 1000
                 actual = 0
-                step = "mil"
+                paso = "mil"
                 j += 1
                 continue
             else:
                 break
 
-        elif step == "mil":
-            # Tras "mil": CENTENAS, DECENAS o UNIDADES; no otro "mil" seguido
+        elif paso == "mil":
+            # Tras "mil": CENTENAS, DECENAS, UNIDADES o UNO; no otro "mil" seguido
             if p in CENTENAS:
+                if j > 0 and palabras[j - 1] == "por":
+                    break
                 actual += CENTENAS[p]
-                step = 100
+                paso = 100
                 j += 1
                 continue
             elif p in DECENAS:
                 actual += DECENAS[p]
-                step = 10
+                paso = 10
                 j += 1
                 continue
             elif p in UNIDADES:
                 actual += UNIDADES[p]
-                step = 1
+                paso = 1
+                j += 1
+                continue
+            elif p in UNO:
+                actual += UNO[p]
+                paso = 1
                 j += 1
                 continue
             else:
                 break
 
-        elif step == 100:
-            # Tras CENTENAS: DECENAS, UNIDADES o "mil" (no otra CENTENAS)
+        elif paso == 100:
+            # Tras CENTENAS: DECENAS, UNIDADES, UNO o "mil" (no otra CENTENAS)
             if p in DECENAS:
                 actual += DECENAS[p]
-                step = 10
+                paso = 10
                 j += 1
                 continue
             elif p in UNIDADES:
                 actual += UNIDADES[p]
-                step = 1
+                paso = 1
+                j += 1
+                continue
+            elif p in UNO:
+                actual += UNO[p]
+                paso = 1
                 j += 1
                 continue
             elif p == "mil":
                 total += (actual or 1) * 1000
                 actual = 0
-                step = "mil"
+                paso = "mil"
                 j += 1
                 continue
             else:
                 break
 
-        elif step == 10:
+        elif paso == 10:
             # Tras DECENAS: UNIDADES (1-9), "y"+unit, o "mil"
             if p in DECENAS:
                 break  # No dos DECENAS seguidas
             elif p in UNIDADES and UNIDADES[p] <= 9:
                 actual += UNIDADES[p]
-                step = 1
+                paso = 1
                 j += 1
                 continue
             elif p == "y":
@@ -232,25 +257,25 @@ def _leer_numero(palabras, i):
                     valor_siguiente = UNIDADES.get(siguiente, UNO.get(siguiente))
                     if valor_siguiente is not None and valor_siguiente <= 9:
                         actual += valor_siguiente
-                        step = 1
+                        paso = 1
                         j += 2
                         continue
                 break
             elif p == "mil":
                 total += (actual or 1) * 1000
                 actual = 0
-                step = "mil"
+                paso = "mil"
                 j += 1
                 continue
             else:
                 break
 
-        elif step == 1:
-            # Tras UNIDADES o "y"+unit: solo "mil"
+        elif paso == 1:
+            # Tras UNIDADES, UNO o "y"+unit: solo "mil"
             if p == "mil":
                 total += (actual or 1) * 1000
                 actual = 0
-                step = "mil"
+                paso = "mil"
                 j += 1
                 continue
             else:
@@ -259,7 +284,7 @@ def _leer_numero(palabras, i):
         else:
             break
 
-    if step is None and actual == 0 and total == 0:
+    if paso is None and actual == 0 and total == 0:
         return None, i
     return total + actual, j
 
@@ -274,7 +299,8 @@ def valores(texto):
     plano = _plegar(texto)
     resultado = {f"{int(n)}/{int(d)}" for n, d in _FRACCION.findall(plano)}
     sin_fracciones = _FRACCION.sub(" ", plano)
-    resultado.update(_CIFRA.findall(sin_fracciones))
+    for cifra in _CIFRA.findall(sin_fracciones):
+        resultado.add(cifra.replace(".", "") if _MILES.match(cifra) else cifra)
 
     # Dividir por puntuación para que la puntuación corte frases
     segmentos = _PUNTUACION.split(sin_fracciones)
