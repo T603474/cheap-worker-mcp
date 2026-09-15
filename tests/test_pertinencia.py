@@ -96,6 +96,12 @@ class TestValores(unittest.TestCase):
         self.assertEqual(valores("treinta y un días"), {"31"})
         self.assertEqual(valores("cien mil"), {"100000"})
 
+    def test_mil_al_inicio(self):
+        """'mil' puede ser la primera palabra de una frase numérica."""
+        self.assertEqual(valores("mil novecientos setenta y ocho"), {"1978"})
+        self.assertEqual(valores("mil euros"), {"1000"})
+        self.assertEqual(valores("mil quinientos"), {"1500"})
+
     def test_fechas_no_son_fracciones(self):
         """Fechas en formato numérico no se interpretan como fracciones."""
         result = valores("el 15/09/2026")

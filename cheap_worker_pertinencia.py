@@ -141,7 +141,7 @@ def _leer_numero(palabras, i):
         p = palabras[j]
 
         if step is None or step == 100:
-            # Inicio o tras "mil": aceptar CENTENAS, DECENAS, UNIDADES, o "mil" (tras CENTENAS)
+            # Inicio o tras "mil": aceptar CENTENAS, DECENAS, UNIDADES, o "mil"
             if p in CENTENAS:
                 actual += CENTENAS[p]
                 step = 100
@@ -157,8 +157,8 @@ def _leer_numero(palabras, i):
                 step = 1
                 j += 1
                 continue
-            elif p == "mil" and step == 100:
-                # "mil" después de CENTENAS: multiplica y reinicia
+            elif p == "mil":
+                # "mil" al inicio o después de CENTENAS: multiplica y reinicia
                 total += (actual or 1) * 1000
                 actual = 0
                 step = None
