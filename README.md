@@ -319,6 +319,18 @@ Lo que enseña:
 - `qwen2.5-coder:3b` apenas sigue el formato con prosa: con documentos, usa un modelo generalista.
 - Ninguna consulta agotó el tiempo: el documento de 1 905 líneas tardó entre 45 y 160 s.
 
+**Con el filtro de pertinencia** (cita que respalda la afirmación y toca la pregunta), las mismas preguntas y ventana de 8192:
+
+| Modelo | Correctas y respaldadas | Verdaderas pero no responden | Falsas | "No consta" correctos (de 3) | Tiempo total | Reparto |
+|---|---|---|---|---|---|---|
+| `gemma3:4b` | 2 | 4 | 0 | 2 | 711 s | 54 % CPU / 46 % GPU |
+| `llama3.2:3b` | 2 | 1 | 0 | 2 | 821 s | 29 % CPU / 71 % GPU |
+| `qwen2.5:3b` | 0 | 0 | 0 | 3 | 293 s | 100 % GPU |
+| `qwen2.5-coder:3b` | 0 | 0 | 0 | 1 | 356 s | 100 % GPU |
+
+- **Ninguna afirmación falsa llega ya a la salida.** Las que pasan dicen lo que dice su cita. Las "verdaderas pero no responden" comparten palabras genéricas con la pregunta ("Constitución", "Tribunal").
+- **El filtro descarta poco** (1–10 afirmaciones por modelo). Lo que se pierde de verdad son las afirmaciones **sin cita** (64–155): el modelo escribe la viñeta y omite la línea `>`. Ahí está el margen de mejora, en el prompt, no en más filtros.
+
 Por eso el hook sigue sin bloquear documentos: para extraer datos de un documento largo, léelo.
 
 **No uses modelos de razonamiento.** `gemma4:12b` devuelve la cadena de pensamiento en un campo aparte y deja el contenido vacío: gasta el techo de salida pensando y no llega a responder. El shunt lo detecta y da un error con ese diagnóstico, pero el modelo no sirve para este papel.
