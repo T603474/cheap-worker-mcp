@@ -84,7 +84,10 @@ class TestCache(unittest.TestCase):
     def test_cambiar_la_variante_de_prompt_invalida_la_entrada(self):
         cfg = self._cfg()
         bulk_read(cfg, "q", [self.archivo], backend=BackendFalso([respuesta("antiguo")]))
-        with mock.patch.object(cheap_worker_core, "VARIANTE_PROMPT", "pregunta_al_final"):
+        original = cheap_worker_core._mensajes_bulk
+        delega = lambda pregunta, texto_bloque, variante: original(pregunta, texto_bloque, "pregunta_al_final")
+        with mock.patch.object(cheap_worker_core, "VARIANTE_PROMPT", "otra-variante"), \
+                mock.patch.object(cheap_worker_core, "_mensajes_bulk", delega):
             nuevo = bulk_read(cfg, "q", [self.archivo], backend=BackendFalso([respuesta("actual")]))
         self.assertIn("- actual", nuevo)
 

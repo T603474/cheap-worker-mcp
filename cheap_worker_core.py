@@ -349,7 +349,7 @@ class Backend:
 # cheap_worker_pertinencia): el umbral de cobertura, la longitud de raíz, las
 # palabras vacías o el análisis de números en letras, porque una respuesta
 # calculada con las reglas antiguas puede diferir de la que darían las nuevas.
-FORMATO_RESPUESTA = "citas-verificadas-3"
+FORMATO_RESPUESTA = "citas-verificadas-4"
 
 
 def _clave_cache(perfil: Perfil, question: str, bloques, faltan) -> str:
@@ -423,37 +423,21 @@ def _cache_podar(cfg: Config) -> None:
         pass
 
 
-# Prompt del lector. El del gist lo presentaba como analista de código y exigía
-# empezar cada viñeta por nombre, tipo y línea: con una tabla vacía no hay nada
-# que citar, y un modelo pequeño rellenaba. Ahora cada dato va con su cita, que
-# el servidor comprueba.
-SYSTEM_BULK = (
-    "You read files (source code or documents, in any language) and answer a question about them.\n"
-    "Use ONLY what is written in the files. Never guess, never fill gaps, never invent numbers.\n"
-    "Answer in the language of the question.\n"
-    "Output format, and nothing else:\n"
-    "- <one fact that answers the question>\n"
-    "  > <exact text copied character by character from the files that proves the fact>\n"
-    "One bullet per fact. Every bullet needs its quote line. Copy the quote literally: "
-    "do not translate, summarize or fix it.\n"
-    "If the files do not contain the answer, output exactly: NO CONSTA"
-)
-
-
-# Variantes del prompt en medición (ver docs/superpowers/specs/2026-09-15-prompt-citas-design.md).
-# Con trozos de ~7000 tokens, un modelo pequeño que lee la pregunta antes del
-# documento la olvida y resume; y a veces "cita" su propia frase. Las variantes
-# nuevas repiten la pregunta tras el documento y enseñan el formato con un
-# ejemplo inventado. La medición decide cuál queda.
-VARIANTES_PROMPT = ("actual", "pregunta_al_final", "cita_primero")
-VARIANTE_PROMPT = "actual"
-
+# Prompt del lector. La medición (ver
+# docs/superpowers/specs/2026-09-15-prompt-citas-design.md) comparó tres
+# variantes con las mismas preguntas: la pregunta antes del documento (formato
+# del gist original), la pregunta repetida tras el documento con un
+# recordatorio del formato, y una variante con la cita antes de la afirmación.
+# Ganó la pregunta al final: el modelo deja de olvidarla y de resumir el
+# documento cuando la ventana no le cabe entera. SYSTEM_BULK enseña el formato
+# con un ejemplo inventado que usa el mismo envoltorio `<file>` que los trozos
+# reales.
 _EJEMPLO_DOCUMENTO = (
     'Files:\n<file path="ejemplo.md">\nArtículo 4. La junta se reúne dos veces al año. '
     'Sus acuerdos requieren mayoría simple.\n</file>\n'
 )
 
-SYSTEM_BULK_PREGUNTA_AL_FINAL = (
+SYSTEM_BULK = (
     "You answer ONE question using ONLY the files the user sends. Never summarize the files, "
     "never guess, never invent numbers. Answer in the language of the question.\n"
     "For each fact that answers the question, write two lines:\n"
@@ -472,52 +456,24 @@ SYSTEM_BULK_PREGUNTA_AL_FINAL = (
     "NO CONSTA"
 )
 
-SYSTEM_BULK_CITA_PRIMERO = (
-    "You answer ONE question using ONLY the files the user sends. Never summarize the files, "
-    "never guess, never invent numbers. Answer in the language of the question.\n"
-    "For each fact that answers the question, write two lines, quote first:\n"
-    "> <a sentence copied character by character from the files>\n"
-    "- <the fact that this sentence proves>\n"
-    "The quote must be copied from the files, never written by you.\n"
-    "If the files do not answer the question, write only: NO CONSTA\n\n"
-    "Example.\n"
-    + _EJEMPLO_DOCUMENTO
-    + "Question: ¿Cuántas veces se reúne la junta?\n"
-    "Answer:\n"
-    "> La junta se reúne dos veces al año\n"
-    "- La junta se reúne dos veces al año.\n"
-    "Question: ¿Quién preside la junta?\n"
-    "Answer:\n"
-    "NO CONSTA"
+# El mecanismo de variantes queda para futuros experimentos, con una sola
+# variante activa: la que ganó la medición.
+VARIANTES_PROMPT = ("pregunta_al_final",)
+VARIANTE_PROMPT = "pregunta_al_final"
+
+_RECORDATORIO_BULK = (
+    "Answer only this question, do not summarize. Every fact is a line \"- \" followed by an "
+    "indented line \"  > \" with a quote copied from the files. If the files do not answer it, "
+    "write NO CONSTA.\nAnswer:\n"
 )
-
-_RECORDATORIO = {
-    "pregunta_al_final": (
-        "Answer only this question, do not summarize. Every fact is a line \"- \" followed by an "
-        "indented line \"  > \" with a quote copied from the files. If the files do not answer it, "
-        "write NO CONSTA.\nAnswer:\n"
-    ),
-    "cita_primero": (
-        "Answer only this question, do not summarize. For every fact, first the line \"> \" with "
-        "a quote copied from the files, then the line \"- \" with the fact. If the files do not "
-        "answer it, write NO CONSTA.\nAnswer:\n"
-    ),
-}
-
-_SISTEMA = {
-    "pregunta_al_final": SYSTEM_BULK_PREGUNTA_AL_FINAL,
-    "cita_primero": SYSTEM_BULK_CITA_PRIMERO,
-}
 
 
 def _mensajes_bulk(pregunta, texto_bloque, variante):
     """(system, user) de una llamada de bulk_read según la variante del prompt."""
-    if variante == "actual":
-        return SYSTEM_BULK, f"Question: {pregunta}\n\nFiles:\n{texto_bloque}"
-    if variante in _SISTEMA:
-        usuario = f"Files:\n{texto_bloque}\nQuestion: {pregunta}\n{_RECORDATORIO[variante]}"
-        return _SISTEMA[variante], usuario
-    raise ValueError(f"Variante de prompt desconocida: {variante}")
+    if variante != "pregunta_al_final":
+        raise ValueError(f"Variante de prompt desconocida: {variante}")
+    usuario = f"Files:\n{texto_bloque}\nQuestion: {pregunta}\n{_RECORDATORIO_BULK}"
+    return SYSTEM_BULK, usuario
 
 
 def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
@@ -551,9 +507,7 @@ def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
     for bloque in troceado.blocks:
         sistema, usuario = _mensajes_bulk(question, bloque.texto, VARIANTE_PROMPT)
         respuesta = backend.chat(perfil, sistema, usuario)
-        buenas, malas = verificar_respuesta(
-            respuesta, bloque.tramos, question, cita_primero=VARIANTE_PROMPT == "cita_primero",
-        )
+        buenas, malas = verificar_respuesta(respuesta, bloque.tramos, question)
         verificadas.extend(buenas)
         descartes.update(malas)
 

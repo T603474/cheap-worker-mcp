@@ -3,7 +3,7 @@
 
 Uso:
   python eval-bulk-read.py preguntas.json --modelos qwen2.5:3b,llama3.2:3b [--salida DIR]
-    [--variantes actual,pregunta_al_final,cita_primero]
+    [--variantes pregunta_al_final]
 
 preguntas.json es una lista de objetos:
   {"archivo": "ruta", "pregunta": "...",

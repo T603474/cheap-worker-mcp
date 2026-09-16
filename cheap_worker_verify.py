@@ -81,10 +81,8 @@ def _es_no_consta(texto: str) -> bool:
     return normalizar(texto).strip(" .…:;!¡") == "no consta"
 
 
-def analizar_respuesta(texto: str, cita_primero: bool = False) -> list:
+def analizar_respuesta(texto: str) -> list:
     """Afirmaciones de una respuesta con formato viñeta + cita (`-` y `>`)."""
-    if cita_primero:
-        return _analizar_cita_primero(texto)
     afirmaciones = []
     actual = None
     citas = []
@@ -106,40 +104,6 @@ def analizar_respuesta(texto: str, cita_primero: bool = False) -> list:
             actual += " " + limpia
     if actual is not None:
         afirmaciones.append(Afirmacion(actual.strip(), " ".join(citas).strip()))
-    return afirmaciones
-
-
-def _analizar_cita_primero(texto):
-    """Formato con la cita delante: las líneas `>` respaldan la viñeta siguiente.
-
-    Una cita sin viñeta posterior no respalda nada y se ignora; una viñeta sin
-    cita previa queda con cita vacía y se descartará como "sin cita".
-    """
-    afirmaciones = []
-    pendientes = []
-    actual = None
-    cita_actual = ""
-    for linea in texto.splitlines():
-        limpia = linea.strip()
-        if not limpia:
-            continue
-        if limpia.startswith(">"):
-            if actual is not None:
-                afirmaciones.append(Afirmacion(actual.strip(), cita_actual))
-                actual = None
-            pendientes.append(limpia.lstrip(">").strip())
-            continue
-        vineta = _VINETA_SIMBOLO.match(linea) or _VINETA_NUMERADA.match(linea)
-        if vineta:
-            if actual is not None:
-                afirmaciones.append(Afirmacion(actual.strip(), cita_actual))
-            actual = linea[vineta.end():]
-            cita_actual = " ".join(pendientes).strip()
-            pendientes = []
-        elif actual is not None:
-            actual += " " + limpia
-    if actual is not None:
-        afirmaciones.append(Afirmacion(actual.strip(), cita_actual))
     return afirmaciones
 
 
@@ -222,7 +186,7 @@ def verificar(afirmaciones, tramos, pregunta=""):
     return verificadas, descartes
 
 
-def verificar_respuesta(texto, tramos, pregunta="", cita_primero=False):
+def verificar_respuesta(texto, tramos, pregunta=""):
     """Analiza y verifica una respuesta completa del modelo (un chunk).
 
     Añade el descarte `sin_formato` cuando la respuesta no está vacía, no es
@@ -230,7 +194,7 @@ def verificar_respuesta(texto, tramos, pregunta="", cita_primero=False):
     una respuesta en prosa no debe confundirse con "No consta en los
     documentos.", que es lo que se compone cuando no hay afirmaciones.
     """
-    afirmaciones = analizar_respuesta(texto, cita_primero)
+    afirmaciones = analizar_respuesta(texto)
     verificadas, descartes = verificar(afirmaciones, tramos, pregunta)
     if not afirmaciones:
         limpio = texto.strip()

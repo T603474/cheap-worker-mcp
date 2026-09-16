@@ -2,12 +2,9 @@ import os
 import tempfile
 import unittest
 import zipfile
-from unittest import mock
 
 import cheap_worker_core
-from cheap_worker_core import (
-    BudgetError, Config, SYSTEM_BULK, VARIANTES_PROMPT, _mensajes_bulk, bulk_read,
-)
+from cheap_worker_core import BudgetError, Config, SYSTEM_BULK, _mensajes_bulk, bulk_read
 from tests.helpers import BackendFalso
 
 
@@ -126,64 +123,34 @@ class TestBulkRead(unittest.TestCase):
         resultado = bulk_read(self.cfg, "¿Plazo?", [ruta], backend=backend)
         self.assertIn(f"({ruta}:párrafo 1)", resultado)
 
-    def test_cita_primero_de_extremo_a_extremo(self):
-        path = self._write("a.md", "# Título\nLas leyes orgánicas requieren mayoría absoluta del Congreso.\n")
-        backend = BackendFalso(["> requieren mayoría absoluta del Congreso\n- Requieren mayoría absoluta"])
-        with mock.patch.object(cheap_worker_core, "VARIANTE_PROMPT", "cita_primero"):
-            resultado = bulk_read(self.cfg, "¿Qué mayoría?", [path], backend=backend)
-        self.assertEqual(resultado, (
-            "- Requieren mayoría absoluta\n"
-            "  > requieren mayoría absoluta del Congreso\n"
-            f"  ({path}:línea 2)"
-        ))
-
 
 class TestMensajesBulk(unittest.TestCase):
     PREGUNTA = "¿Cuántas veces se reúne el consejo?"
     TEXTO = '<file path="a.md">\nEl consejo se reúne tres veces.\n</file>\n'
 
-    def test_actual_reproduce_el_formato_de_siempre(self):
-        sistema, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "actual")
-        self.assertIs(sistema, SYSTEM_BULK)
-        self.assertEqual(usuario, f"Question: {self.PREGUNTA}\n\nFiles:\n{self.TEXTO}")
-
     def test_la_pregunta_va_despues_del_documento(self):
-        for variante in ("pregunta_al_final", "cita_primero"):
-            with self.subTest(variante=variante):
-                _, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, variante)
-                self.assertGreater(usuario.index(self.PREGUNTA), usuario.index(self.TEXTO))
-                self.assertTrue(usuario.rstrip().endswith("Answer:"))
+        _, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
+        self.assertGreater(usuario.index(self.PREGUNTA), usuario.index(self.TEXTO))
+        self.assertTrue(usuario.rstrip().endswith("Answer:"))
 
     def test_las_variantes_nuevas_llevan_ejemplo_y_no_consta(self):
-        for variante in ("pregunta_al_final", "cita_primero"):
-            with self.subTest(variante=variante):
-                sistema, _ = _mensajes_bulk(self.PREGUNTA, self.TEXTO, variante)
-                self.assertIn("Example", sistema)
-                self.assertIn("NO CONSTA", sistema)
-                self.assertIn("La junta se reúne dos veces al año", sistema)
-
-    def test_orden_del_ejemplo_segun_la_variante(self):
-        normal, _ = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
-        primero, _ = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "cita_primero")
-        self.assertLess(normal.index("- La junta se reúne"), normal.index("> La junta se reúne"))
-        self.assertLess(primero.index("> La junta se reúne"), primero.index("- La junta se reúne"))
+        sistema, _ = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
+        self.assertIn("Example", sistema)
+        self.assertIn("NO CONSTA", sistema)
+        self.assertIn("La junta se reúne dos veces al año", sistema)
 
     def test_variante_desconocida(self):
         with self.assertRaises(ValueError):
-            _mensajes_bulk(self.PREGUNTA, self.TEXTO, "otra")
+            _mensajes_bulk(self.PREGUNTA, self.TEXTO, "actual")
 
     def test_el_ejemplo_usa_el_mismo_envoltorio_que_los_trozos_reales(self):
-        for variante in ("pregunta_al_final", "cita_primero"):
-            with self.subTest(variante=variante):
-                sistema, _ = _mensajes_bulk(self.PREGUNTA, self.TEXTO, variante)
-                self.assertIn('<file path="ejemplo.md">', sistema)
+        sistema, _ = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
+        self.assertIn('<file path="ejemplo.md">', sistema)
 
     def test_no_hay_linea_en_blanco_entre_el_documento_y_la_pregunta(self):
-        for variante in ("pregunta_al_final", "cita_primero"):
-            with self.subTest(variante=variante):
-                _, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, variante)
-                self.assertEqual(usuario.count("</file>\n\nQuestion:"), 1)
-                self.assertNotIn("</file>\n\n\nQuestion:", usuario)
+        _, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
+        self.assertEqual(usuario.count("</file>\n\nQuestion:"), 1)
+        self.assertNotIn("</file>\n\n\nQuestion:", usuario)
 
     def test_el_recordatorio_de_pregunta_al_final_describe_la_cita_indentada(self):
         _, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
@@ -196,9 +163,8 @@ class TestMensajesBulk(unittest.TestCase):
                 f.write("texto sin relación\n")
             cfg = Config.from_env({"SHUNT_CACHE_MAX": "0"})
             backend = BackendFalso(["NO CONSTA"])
-            with mock.patch.object(cheap_worker_core, "VARIANTE_PROMPT", "pregunta_al_final"):
-                bulk_read(cfg, "¿Plazo?", [ruta], backend=backend)
-            self.assertIs(backend.llamadas[0]["system"], cheap_worker_core.SYSTEM_BULK_PREGUNTA_AL_FINAL)
+            bulk_read(cfg, "¿Plazo?", [ruta], backend=backend)
+            self.assertIs(backend.llamadas[0]["system"], cheap_worker_core.SYSTEM_BULK)
             self.assertTrue(backend.llamadas[0]["user"].rstrip().endswith("Answer:"))
 
 

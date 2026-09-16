@@ -55,9 +55,9 @@ class TestVariantes(unittest.TestCase):
 
         caso = {"archivo": "x.md", "pregunta": "¿?", "tipo": "sin_respuesta", "esperado": []}
         with mock.patch.object(self.ev.core, "bulk_read", falso), \
-                mock.patch.object(self.ev.core, "VARIANTE_PROMPT", "actual"):
-            filas = self.ev.evaluar("modelo:3b", [caso], None, "cita_primero")
-        self.assertEqual(vistas, ["cita_primero"])
+                mock.patch.object(self.ev.core, "VARIANTE_PROMPT", "pregunta_al_final"):
+            filas = self.ev.evaluar("modelo:3b", [caso], None, "otra")
+        self.assertEqual(vistas, ["otra"])
         self.assertTrue(filas[0]["ok"])
 
     def test_main_recorre_modelos_por_variantes(self):
@@ -71,10 +71,11 @@ class TestVariantes(unittest.TestCase):
             ruta = os.path.join(d, "p.json")
             with open(ruta, "w", encoding="utf-8") as f:
                 json.dump([], f)
-            with mock.patch.object(self.ev, "evaluar", falso):
-                self.ev.main([ruta, "--modelos", "a,b", "--variantes", "actual,cita_primero"])
-        self.assertEqual(llamadas, [("a", "actual"), ("a", "cita_primero"),
-                                    ("b", "actual"), ("b", "cita_primero")])
+            with mock.patch.object(self.ev, "evaluar", falso), \
+                    mock.patch.object(self.ev.core, "VARIANTES_PROMPT", ("v1", "v2")):
+                self.ev.main([ruta, "--modelos", "a,b", "--variantes", "v1,v2"])
+        self.assertEqual(llamadas, [("a", "v1"), ("a", "v2"),
+                                    ("b", "v1"), ("b", "v2")])
 
     def test_variante_desconocida_se_rechaza(self):
         with tempfile.TemporaryDirectory() as d:
