@@ -166,6 +166,15 @@ class TestBulkRead(unittest.TestCase):
         resultado = bulk_read(self.cfg, "¿Plazo?", [ruta], backend=backend)
         self.assertIn(f"({ruta}:párrafo 1)", resultado)
 
+    def test_cada_bloque_usa_el_modelo_de_su_tipo(self):
+        cfg = Config.from_env({"SHUNT_MODEL_BULK": "documentos:4b", "SHUNT_MODEL_BULK_CODE": "codigo:3b",
+                               "SHUNT_CACHE_MAX": "0"})
+        documento = self._write("a.md", "texto del documento\n")
+        codigo = self._write("b.py", "x = 1\n")
+        backend = BackendFalso(["NO CONSTA", "NO CONSTA"])
+        bulk_read(cfg, "¿Qué hay?", [codigo, documento], backend=backend)
+        self.assertEqual([l["modelo"] for l in backend.llamadas], ["documentos:4b", "codigo:3b"])
+
 
 class TestMensajesBulk(unittest.TestCase):
     PREGUNTA = "¿Cuántas veces se reúne el consejo?"

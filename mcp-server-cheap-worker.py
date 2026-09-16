@@ -272,6 +272,7 @@ def main():
             f"{nombre}: {perfil.modelo}, salida {perfil.salida_max}, "
             f"presupuesto {perfil.presupuesto} tokens"
         )
+    logger.info(f"bulk_read con código: {cfg.perfil_bulk_code.modelo}")
 
     try:
         for line in sys.stdin:

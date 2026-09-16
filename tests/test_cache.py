@@ -118,6 +118,13 @@ class TestCache(unittest.TestCase):
         segunda = bulk_read(cfg, "q", [self.archivo], backend=BackendFalso([respuesta("valida")]))
         self.assertIn("- valida", segunda)
 
+    def test_cambiar_el_modelo_de_lectura_de_codigo_invalida_la_entrada(self):
+        bulk_read(self._cfg(SHUNT_MODEL_BULK_CODE="a:3b"), "q", [self.archivo],
+                  backend=BackendFalso([respuesta("del modelo a")]))
+        otro = bulk_read(self._cfg(SHUNT_MODEL_BULK_CODE="b:3b"), "q", [self.archivo],
+                         backend=BackendFalso([respuesta("del modelo b")]))
+        self.assertIn("- del modelo b", otro)
+
     def test_los_archivos_que_faltan_entran_en_la_clave(self):
         cfg = self._cfg()
         fantasma = os.path.join(self.dir.name, "fantasma.py")

@@ -59,6 +59,11 @@ class TestArranqueDelServidor(unittest.TestCase):
         self.assertIn("bulk_read:", stderr)
         self.assertIn("code_write:", stderr)
 
+    def test_el_log_de_arranque_nombra_el_modelo_de_lectura_de_codigo(self):
+        _, _, stderr = hablar({"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}},
+                              {"SHUNT_MODEL_BULK_CODE": "codigo:3b"})
+        self.assertIn("codigo:3b", stderr)
+
     def test_una_config_invalida_sale_limpia_sin_traceback(self):
         codigo, respuesta, stderr = hablar(
             {"jsonrpc": "2.0", "id": 4, "method": "tools/list", "params": {}},

@@ -114,6 +114,7 @@ Y lo que cambia por herramienta, porque las dos piden cosas opuestas:
 | Variable | Defecto | Para qué |
 |---|---|---|
 | `SHUNT_MODEL_BULK` / `SHUNT_MODEL_CODE` | `qwen2.5-coder:7b` | Modelo de cada una |
+| `SHUNT_MODEL_BULK_CODE` | el de `SHUNT_MODEL_BULK` | Modelo de `bulk_read` para archivos de código |
 | `SHUNT_MAX_OUTPUT_BULK` | `512` | Techo de salida al resumir |
 | `SHUNT_MAX_OUTPUT_CODE` | `2048` | Techo de salida al generar |
 | `SHUNT_TEMP_BULK` / `SHUNT_TEMP_CODE` | `0.2` / `0.0` | Temperaturas |
@@ -299,6 +300,8 @@ Ollama sirve 4096 por defecto aunque el modelo admita más. Para subirla, fija l
 **5,5× de diferencia** entre caber y no caber. Bajar la cuantización sin bajar de tamaño no sirve: el Q3 sigue sin caber y encima paga más descuantización.
 
 La calidad del 3B resumiendo aguanta bien: cubre las mismas responsabilidades que el 7B, con menos anidamiento. Por eso la configuración por defecto de `.mcp.json` le da el 3B a `bulk_read`, que es lo frecuente, y reserva el 7B para `code_write`, donde la especialización en código sí se paga.
+
+**Código y documentos pueden usar modelos distintos.** `bulk_read` manda los archivos de código a `SHUNT_MODEL_BULK_CODE` y el resto a `SHUNT_MODEL_BULK`, en bloques separados. Un modelo de código (`qwen2.5-coder:3b`) lee bien código y mal prosa; uno generalista (`gemma3:4b`) al revés. Si una consulta mezcla los dos tipos y no caben ambos en la VRAM, Ollama cambia de modelo a mitad y tarda unos segundos más.
 
 ### Con documentos: evaluación
 
