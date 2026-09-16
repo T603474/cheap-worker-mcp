@@ -130,6 +130,7 @@ class TestInvarianteDelPresupuesto(unittest.TestCase):
         mensaje = str(ctx.exception)
         self.assertIn("SHUNT_RESERVE_TOKENS", mensaje)
         self.assertIn("SHUNT_RESERVE_EXTRA", mensaje)
+        self.assertIn("512", mensaje)
 
 
 if __name__ == "__main__":

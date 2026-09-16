@@ -115,8 +115,8 @@ class Config:
             raise InputError(
                 "SHUNT_RESERVE_TOKENS ya no existe: la reserva se deriva del techo "
                 "de salida de cada herramienta. Quítala y usa SHUNT_RESERVE_EXTRA "
-                "(margen para el prompt de sistema, 256 por defecto) si necesitas "
-                "ajustarla."
+                "(margen para el texto fijo de los mensajes, 512 por defecto) si "
+                "necesitas ajustarla."
             )
 
         # Cada herramienta cae al valor comun si no tiene el suyo, para que un
@@ -449,8 +449,8 @@ VARIANTES_PROMPT = ("actual", "pregunta_al_final", "cita_primero")
 VARIANTE_PROMPT = "actual"
 
 _EJEMPLO_DOCUMENTO = (
-    'Files: "Artículo 4. La junta se reúne dos veces al año. '
-    'Sus acuerdos requieren mayoría simple."\n'
+    'Files:\n<file path="ejemplo.md">\nArtículo 4. La junta se reúne dos veces al año. '
+    'Sus acuerdos requieren mayoría simple.\n</file>\n'
 )
 
 SYSTEM_BULK_PREGUNTA_AL_FINAL = (
@@ -493,8 +493,9 @@ SYSTEM_BULK_CITA_PRIMERO = (
 
 _RECORDATORIO = {
     "pregunta_al_final": (
-        "Answer only this question, do not summarize. Every fact needs its line \"> \" with a "
-        "quote copied from the files. If the files do not answer it, write NO CONSTA.\nAnswer:\n"
+        "Answer only this question, do not summarize. Every fact is a line \"- \" followed by an "
+        "indented line \"  > \" with a quote copied from the files. If the files do not answer it, "
+        "write NO CONSTA.\nAnswer:\n"
     ),
     "cita_primero": (
         "Answer only this question, do not summarize. For every fact, first the line \"> \" with "
@@ -514,7 +515,7 @@ def _mensajes_bulk(pregunta, texto_bloque, variante):
     if variante == "actual":
         return SYSTEM_BULK, f"Question: {pregunta}\n\nFiles:\n{texto_bloque}"
     if variante in _SISTEMA:
-        usuario = f"Files:\n{texto_bloque}\n\nQuestion: {pregunta}\n{_RECORDATORIO[variante]}"
+        usuario = f"Files:\n{texto_bloque}\nQuestion: {pregunta}\n{_RECORDATORIO[variante]}"
         return _SISTEMA[variante], usuario
     raise ValueError(f"Variante de prompt desconocida: {variante}")
 

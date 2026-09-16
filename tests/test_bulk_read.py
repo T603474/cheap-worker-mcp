@@ -161,6 +161,23 @@ class TestMensajesBulk(unittest.TestCase):
         with self.assertRaises(ValueError):
             _mensajes_bulk(self.PREGUNTA, self.TEXTO, "otra")
 
+    def test_el_ejemplo_usa_el_mismo_envoltorio_que_los_trozos_reales(self):
+        for variante in ("pregunta_al_final", "cita_primero"):
+            with self.subTest(variante=variante):
+                sistema, _ = _mensajes_bulk(self.PREGUNTA, self.TEXTO, variante)
+                self.assertIn('<file path="ejemplo.md">', sistema)
+
+    def test_no_hay_linea_en_blanco_entre_el_documento_y_la_pregunta(self):
+        for variante in ("pregunta_al_final", "cita_primero"):
+            with self.subTest(variante=variante):
+                _, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, variante)
+                self.assertEqual(usuario.count("</file>\n\nQuestion:"), 1)
+                self.assertNotIn("</file>\n\n\nQuestion:", usuario)
+
+    def test_el_recordatorio_de_pregunta_al_final_describe_la_cita_indentada(self):
+        _, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
+        self.assertIn("  > ", usuario)
+
     def test_bulk_read_usa_la_variante_activa(self):
         with tempfile.TemporaryDirectory() as d:
             ruta = os.path.join(d, "a.md")
