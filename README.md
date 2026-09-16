@@ -331,6 +331,19 @@ Lo que enseña:
 - **Ninguna afirmación falsa llega ya a la salida.** Las que pasan dicen lo que dice su cita. Las "verdaderas pero no responden" comparten palabras genéricas con la pregunta ("Constitución", "Tribunal").
 - **El filtro descarta poco** (1–10 afirmaciones por modelo). Lo que se pierde de verdad son las afirmaciones **sin cita** (64–155): el modelo escribe la viñeta y omite la línea `>`. Ahí está el margen de mejora, en el prompt, no en más filtros.
 
+**Con el prompt actual** (la pregunta y un recordatorio del formato van después del documento, con un ejemplo): se compararon tres variantes del prompt con las mismas preguntas y ventana de 8192.
+
+| `gemma3:4b` | Correctas y respaldadas | Engañosas | "No consta" correctos (de 3) | Afirmaciones sin cita | Tiempo total |
+|---|---|---|---|---|---|
+| Pregunta antes del documento (anterior) | 2 | 0 | 2 | 64 | 1 055 s |
+| **Pregunta después del documento (vigente)** | **4** | 1 | **3** | **1** | **500 s** |
+| Cita antes de la afirmación | 3 | 2 | 3 | 8 | 560 s |
+
+- Con la pregunta al principio, en trozos de ~7 000 tokens el modelo la olvidaba y resumía el documento; al repetirla al final responde a lo que se pregunta y cita casi siempre. También tarda la mitad: ya no escribe resúmenes largos.
+- Con el prompt vigente el modelo suele copiar la cita como afirmación: la respuesta se parece a fragmentos subrayados del documento, no a una redacción propia.
+- "Engañosa": fragmento literal y real presentado como respuesta a otra pregunta ("en un plazo no superior a cinco meses" para el plazo de un decreto-ley). Pasa el filtro de pertinencia porque comparte una palabra genérica ("plazo") con la pregunta.
+- `qwen2.5:3b` mejora en la misma dirección (1 acierto y los 3 "No consta", 167 s) pero sigue respondiendo poco.
+
 Por eso el hook sigue sin bloquear documentos: para extraer datos de un documento largo, léelo.
 
 **No uses modelos de razonamiento.** `gemma4:12b` devuelve la cadena de pensamiento en un campo aparte y deja el contenido vacío: gasta el techo de salida pensando y no llega a responder. El shunt lo detecta y da un error con ese diagnóstico, pero el modelo no sirve para este papel.
