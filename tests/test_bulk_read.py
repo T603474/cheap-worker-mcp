@@ -126,6 +126,17 @@ class TestBulkRead(unittest.TestCase):
         resultado = bulk_read(self.cfg, "¿Plazo?", [ruta], backend=backend)
         self.assertIn(f"({ruta}:párrafo 1)", resultado)
 
+    def test_cita_primero_de_extremo_a_extremo(self):
+        path = self._write("a.md", "# Título\nLas leyes orgánicas requieren mayoría absoluta del Congreso.\n")
+        backend = BackendFalso(["> requieren mayoría absoluta del Congreso\n- Requieren mayoría absoluta"])
+        with mock.patch.object(cheap_worker_core, "VARIANTE_PROMPT", "cita_primero"):
+            resultado = bulk_read(self.cfg, "¿Qué mayoría?", [path], backend=backend)
+        self.assertEqual(resultado, (
+            "- Requieren mayoría absoluta\n"
+            "  > requieren mayoría absoluta del Congreso\n"
+            f"  ({path}:línea 2)"
+        ))
+
 
 class TestMensajesBulk(unittest.TestCase):
     PREGUNTA = "¿Cuántas veces se reúne el consejo?"

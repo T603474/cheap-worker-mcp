@@ -551,7 +551,9 @@ def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
     for bloque in troceado.blocks:
         sistema, usuario = _mensajes_bulk(question, bloque.texto, VARIANTE_PROMPT)
         respuesta = backend.chat(perfil, sistema, usuario)
-        buenas, malas = verificar_respuesta(respuesta, bloque.tramos, question)
+        buenas, malas = verificar_respuesta(
+            respuesta, bloque.tramos, question, cita_primero=VARIANTE_PROMPT == "cita_primero",
+        )
         verificadas.extend(buenas)
         descartes.update(malas)
 

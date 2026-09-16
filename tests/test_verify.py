@@ -49,6 +49,32 @@ class TestAnalizarRespuesta(unittest.TestCase):
         self.assertTrue(afirmaciones[0].texto.startswith("El plazo es 30 días"))
         self.assertEqual(afirmaciones[0].cita, "El plazo es de 30 días")
 
+    def test_cita_primero_asigna_la_cita_a_la_vineta_siguiente(self):
+        texto = "> requerirá mayoría absoluta del Congreso\n- Requieren mayoría absoluta"
+        self.assertEqual(
+            analizar_respuesta(texto, cita_primero=True),
+            [Afirmacion("Requieren mayoría absoluta", "requerirá mayoría absoluta del Congreso")],
+        )
+
+    def test_cita_primero_con_varias_afirmaciones(self):
+        texto = "> cita uno aquí\n- uno\n> cita dos aquí\n> sigue la dos\n- dos\n  continúa"
+        self.assertEqual(analizar_respuesta(texto, cita_primero=True), [
+            Afirmacion("uno", "cita uno aquí"),
+            Afirmacion("dos continúa", "cita dos aquí sigue la dos"),
+        ])
+
+    def test_cita_primero_cita_final_sin_vineta_se_ignora(self):
+        texto = "> cita uno aquí\n- uno\n> cita suelta al final"
+        self.assertEqual(analizar_respuesta(texto, cita_primero=True),
+                         [Afirmacion("uno", "cita uno aquí")])
+
+    def test_cita_primero_vineta_sin_cita_previa(self):
+        self.assertEqual(analizar_respuesta("- sin cita", cita_primero=True),
+                         [Afirmacion("sin cita", "")])
+
+    def test_cita_primero_no_consta(self):
+        self.assertEqual(analizar_respuesta("NO CONSTA", cita_primero=True), [])
+
 
 class TestNormalizarYCifras(unittest.TestCase):
     def test_normalizar_quita_marcas_mayusculas_y_espacios(self):
@@ -202,6 +228,11 @@ class TestVerificarRespuesta(unittest.TestCase):
         verificadas, descartes = verificar_respuesta(texto, [tramo(self.LINEAS)])
         self.assertEqual(len(verificadas), 1)
         self.assertEqual(descartes, Counter())
+
+    def test_cita_primero_solo_citas_es_sin_formato(self):
+        _, descartes = verificar_respuesta("> una cita sin afirmación alguna", [tramo(self.LINEAS)],
+                                           cita_primero=True)
+        self.assertEqual(descartes, Counter({"sin_formato": 1}))
 
 
 class TestPertinencia(unittest.TestCase):
