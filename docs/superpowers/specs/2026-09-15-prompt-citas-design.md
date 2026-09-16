@@ -1,7 +1,7 @@
 # bulk_read: que el modelo cite — diseño
 
 **Fecha:** 2026-09-15
-**Estado:** aprobado, pendiente de plan de implementación
+**Estado:** implementado
 **Precede:** `2026-09-15-relevancia-citas-design.md`
 
 ## 1. Problema
@@ -66,3 +66,9 @@ Medición real con `gemma3:4b` y `qwen2.5:3b`, ventana 8192, mismas preguntas (f
 - `bulk_read` con `BackendFalso` en modo `cita_primero`.
 - La clave de caché cambia con la variante.
 - `eval-bulk-read.py` recorre las variantes y fija la constante.
+
+## 9. Resultado
+
+Se midieron las tres variantes con dos modelos; ganó `pregunta_al_final` en
+ambos; `actual` y `cita_primero` (con su analizador) se eliminaron;
+resultados agregados en el README.

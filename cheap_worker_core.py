@@ -423,7 +423,8 @@ def _cache_podar(cfg: Config) -> None:
         pass
 
 
-# Prompt del lector. La medición (ver
+# Prompt del lector. La medición (resultados en el README, sección
+# "Con documentos: evaluación"; diseño en
 # docs/superpowers/specs/2026-09-15-prompt-citas-design.md) comparó tres
 # variantes con las mismas preguntas: la pregunta antes del documento (formato
 # del gist original), la pregunta repetida tras el documento con un

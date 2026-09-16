@@ -341,8 +341,11 @@ Lo que enseña:
 
 - Con la pregunta al principio, en trozos de ~7 000 tokens el modelo la olvidaba y resumía el documento; al repetirla al final responde a lo que se pregunta y cita casi siempre. También tarda la mitad: ya no escribe resúmenes largos.
 - Con el prompt vigente el modelo suele copiar la cita como afirmación: la respuesta se parece a fragmentos subrayados del documento, no a una redacción propia.
-- "Engañosa": fragmento literal y real presentado como respuesta a otra pregunta ("en un plazo no superior a cinco meses" para el plazo de un decreto-ley). Pasa el filtro de pertinencia porque comparte una palabra genérica ("plazo") con la pregunta.
+- "Engañosa": fragmento literal y real presentado como respuesta a otra pregunta (un plazo real de otro artículo, presentado como si fuera el plazo preguntado). Pasa el filtro de pertinencia porque comparte una palabra genérica ("plazo") con la pregunta. Se cuenta aparte de "Falsas": el dueño de la evaluación aceptó este tipo de fallo como parte del riesgo conocido, no como un defecto del filtro.
 - `qwen2.5:3b` mejora en la misma dirección (1 acierto y los 3 "No consta", 167 s) pero sigue respondiendo poco.
+- Los tiempos de esta tabla vienen de una corrida distinta a la anterior: el mismo prompt "anterior" tardó 711 s en la tabla de arriba y 1 055 s aquí. El tiempo varía entre corridas según cómo se reparta la carga entre CPU y GPU.
+
+El prompt vigente se midió solo con documentos. Con código no se ha vuelto a medir: el ejemplo del prompt es prosa y pide copiar «una frase», así que conviene comprobarlo con `eval-bulk-read.py` antes de fiarse de él con código.
 
 Por eso el hook sigue sin bloquear documentos: para extraer datos de un documento largo, léelo.
 
