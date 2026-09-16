@@ -93,13 +93,11 @@ class TestInvarianteDelPresupuesto(unittest.TestCase):
     """Antes habia que mantener la coherencia a mano; ahora es estructural."""
 
     def _fijo(self):
-        """Tokens de los mensajes que no son el documento, en la peor variante."""
-        from cheap_worker_core import SYSTEM_CODE, VARIANTES_PROMPT, _mensajes_bulk, estimate_tokens
+        """Tokens de los mensajes que no son el documento, del prompt vigente y de code_write."""
+        from cheap_worker_core import SYSTEM_CODE, VARIANTE_PROMPT, _mensajes_bulk, estimate_tokens
 
-        bulk = max(
-            estimate_tokens(sistema) + estimate_tokens(usuario)
-            for sistema, usuario in (_mensajes_bulk("", "", v) for v in VARIANTES_PROMPT)
-        )
+        sistema, usuario = _mensajes_bulk("", "", VARIANTE_PROMPT)
+        bulk = estimate_tokens(sistema) + estimate_tokens(usuario)
         return max(bulk, estimate_tokens(SYSTEM_CODE))
 
     def test_el_margen_cubre_el_texto_fijo_de_los_mensajes(self):

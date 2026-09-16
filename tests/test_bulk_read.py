@@ -176,7 +176,7 @@ class TestMensajesBulk(unittest.TestCase):
         self.assertGreater(usuario.index(self.PREGUNTA), usuario.index(self.TEXTO))
         self.assertTrue(usuario.rstrip().endswith("Answer:"))
 
-    def test_las_variantes_nuevas_llevan_ejemplo_y_no_consta(self):
+    def test_el_prompt_lleva_ejemplo_y_no_consta(self):
         sistema, _ = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
         self.assertIn("Example", sistema)
         self.assertIn("NO CONSTA", sistema)
@@ -190,7 +190,7 @@ class TestMensajesBulk(unittest.TestCase):
         sistema, _ = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
         self.assertIn('<file path="ejemplo.md">', sistema)
 
-    def test_no_hay_linea_en_blanco_entre_el_documento_y_la_pregunta(self):
+    def test_una_sola_linea_en_blanco_entre_el_documento_y_la_pregunta(self):
         _, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
         self.assertEqual(usuario.count("</file>\n\nQuestion:"), 1)
         self.assertNotIn("</file>\n\n\nQuestion:", usuario)
@@ -199,7 +199,7 @@ class TestMensajesBulk(unittest.TestCase):
         _, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
         self.assertIn("  > ", usuario)
 
-    def test_bulk_read_usa_la_variante_activa(self):
+    def test_bulk_read_usa_el_prompt_vigente(self):
         with tempfile.TemporaryDirectory() as d:
             ruta = os.path.join(d, "a.md")
             with open(ruta, "w", encoding="utf-8") as f:
