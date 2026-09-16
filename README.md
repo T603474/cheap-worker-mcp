@@ -103,7 +103,7 @@ Todo se ajusta en la sección `env` de `.mcp.json`. Ninguna variable es obligato
 | `SHUNT_API_BASE` | `http://localhost:11434/v1` | Base OpenAI-compatible |
 | `SHUNT_API_KEY` | *(vacío)* | Bearer, si el backend lo exige |
 | `SHUNT_MAX_CTX_TOKENS` | `4096` | Ventana **real** del backend |
-| `SHUNT_RESERVE_EXTRA` | `256` | Margen para el prompt de sistema |
+| `SHUNT_RESERVE_EXTRA` | `512` | Margen para el texto fijo de los mensajes (prompt de sistema, ejemplo y recordatorio) |
 | `SHUNT_TIMEOUT` | `600` | Segundos por llamada |
 | `SHUNT_MIN_LINES` | `350` | Umbral en líneas del hook de bloqueo — ver [Cambiar el umbral](#cambiar-el-umbral) |
 | `SHUNT_CACHE_DIR` | `.cache/cheap-worker` | Dónde se guardan las respuestas cacheadas |
@@ -330,6 +330,22 @@ Lo que enseña:
 
 - **Ninguna afirmación falsa llega ya a la salida.** Las que pasan dicen lo que dice su cita. Las "verdaderas pero no responden" comparten palabras genéricas con la pregunta ("Constitución", "Tribunal").
 - **El filtro descarta poco** (1–10 afirmaciones por modelo). Lo que se pierde de verdad son las afirmaciones **sin cita** (64–155): el modelo escribe la viñeta y omite la línea `>`. Ahí está el margen de mejora, en el prompt, no en más filtros.
+
+**Con el prompt actual** (la pregunta y un recordatorio del formato van después del documento, con un ejemplo): se compararon tres variantes del prompt con las mismas preguntas y ventana de 8192.
+
+| `gemma3:4b` | Correctas y respaldadas | Engañosas | "No consta" correctos (de 3) | Afirmaciones sin cita | Tiempo total |
+|---|---|---|---|---|---|
+| Pregunta antes del documento (anterior) | 2 | 0 | 2 | 64 | 1 055 s |
+| **Pregunta después del documento (vigente)** | **4** | 1 | **3** | **1** | **500 s** |
+| Cita antes de la afirmación | 3 | 2 | 3 | 8 | 560 s |
+
+- Con la pregunta al principio, en trozos de ~7 000 tokens el modelo la olvidaba y resumía el documento; al repetirla al final responde a lo que se pregunta y cita casi siempre. También tarda la mitad: ya no escribe resúmenes largos.
+- Con el prompt vigente el modelo suele copiar la cita como afirmación: la respuesta se parece a fragmentos subrayados del documento, no a una redacción propia.
+- "Engañosa": fragmento literal y real presentado como respuesta a otra pregunta (un plazo real de otro artículo, presentado como si fuera el plazo preguntado). Pasa el filtro de pertinencia porque comparte una palabra genérica ("plazo") con la pregunta. Se cuenta aparte de "Falsas": el dueño de la evaluación aceptó este tipo de fallo como parte del riesgo conocido, no como un defecto del filtro.
+- `qwen2.5:3b` mejora en la misma dirección (1 acierto y los 3 "No consta", 167 s) pero sigue respondiendo poco.
+- Los tiempos de esta tabla vienen de una corrida distinta a la anterior: el mismo prompt "anterior" tardó 711 s en la tabla de arriba y 1 055 s aquí. El tiempo varía entre corridas según cómo se reparta la carga entre CPU y GPU.
+
+El prompt vigente se midió solo con documentos. Con código no se ha vuelto a medir: el ejemplo del prompt es prosa y pide copiar «una frase», así que conviene comprobarlo con `eval-bulk-read.py` antes de fiarse de él con código.
 
 Por eso el hook sigue sin bloquear documentos: para extraer datos de un documento largo, léelo.
 

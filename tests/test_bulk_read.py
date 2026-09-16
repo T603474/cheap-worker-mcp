@@ -3,7 +3,8 @@ import tempfile
 import unittest
 import zipfile
 
-from cheap_worker_core import BudgetError, Config, SYSTEM_BULK, bulk_read
+import cheap_worker_core
+from cheap_worker_core import BudgetError, Config, InputError, SYSTEM_BULK, _mensajes_bulk, bulk_read
 from tests.helpers import BackendFalso
 
 
@@ -111,6 +112,49 @@ class TestBulkRead(unittest.TestCase):
         self.assertTrue(resultado.startswith("No consta en los documentos."))
         self.assertIn("1 con cita ajena a la pregunta", resultado)
 
+    def test_una_pregunta_que_no_deja_presupuesto_lanza_inputerror(self):
+        # Con la config por defecto (ventana 4096, salida bulk 512, margen 512)
+        # el presupuesto de archivos es 3072 tokens. Una pregunta de 5000
+        # palabras ronda los 10000 tokens: no cabe ni ella sola.
+        path = self._write("a.md", "contenido irrelevante\n")
+        cfg = Config.from_env({"SHUNT_CACHE_MAX": "0"})
+        pregunta_larga = "¿" + "palabra " * 5000 + "?"
+        backend = BackendFalso([])
+        with self.assertRaises(InputError) as ctx:
+            bulk_read(cfg, pregunta_larga, [path], backend=backend)
+        mensaje = str(ctx.exception)
+        self.assertIn("pregunta", mensaje)
+        self.assertIn("SHUNT_MAX_CTX_TOKENS", mensaje)
+        self.assertEqual(backend.llamadas, [])
+
+    def test_una_pregunta_larga_deja_menos_presupuesto_y_trocea_mas(self):
+        # Ventana pequeña para que el efecto de la pregunta sobre el
+        # presupuesto sea visible con archivos cortos. presupuesto bulk =
+        # 1024 - 128 (salida) - 512 (margen) = 384 tokens.
+        cfg = Config.from_env({"SHUNT_MAX_CTX_TOKENS": "1024", "SHUNT_MAX_OUTPUT_BULK": "128",
+                                "SHUNT_MAX_OUTPUT_CODE": "128", "SHUNT_RESERVE_EXTRA": "512",
+                                "SHUNT_CACHE_MAX": "0"})
+        # El archivo envuelto en <file> pesa 309 tokens: cabe en 384 - 1 = 383
+        # (con la pregunta corta, 1 token) pero no en 384 - 200 = 184 (con la
+        # pregunta larga, 200 tokens), así que con la pregunta larga tiene que
+        # trocearse en más de un bloque. Necesita varias líneas: una sola
+        # línea que desborda el presupuesto se manda entera igualmente (caso
+        # patológico de _split_lines_to_budget), sin producir más llamadas.
+        linea = "el archivo dice esto y aquello sin mucha relevancia real."
+        contenido = (linea + "\n") * 20
+        path = self._write("a.md", contenido)
+        pregunta_corta = "q"
+        pregunta_larga = "palabra " * 100
+
+        backend_corta = BackendFalso(["NO CONSTA"])
+        bulk_read(cfg, pregunta_corta, [path], backend=backend_corta)
+
+        backend_larga = BackendFalso(["NO CONSTA", "NO CONSTA", "NO CONSTA"])
+        bulk_read(cfg, pregunta_larga, [path], backend=backend_larga)
+
+        self.assertEqual(len(backend_corta.llamadas), 1)
+        self.assertGreater(len(backend_larga.llamadas), len(backend_corta.llamadas))
+
     def test_lee_un_docx_y_ubica_por_parrafo(self):
         ruta = os.path.join(self.dir.name, "a.docx")
         xml = ('<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
@@ -121,6 +165,50 @@ class TestBulkRead(unittest.TestCase):
         backend = BackendFalso(["- Treinta días\n  > plazo será de treinta días"])
         resultado = bulk_read(self.cfg, "¿Plazo?", [ruta], backend=backend)
         self.assertIn(f"({ruta}:párrafo 1)", resultado)
+
+
+class TestMensajesBulk(unittest.TestCase):
+    PREGUNTA = "¿Cuántas veces se reúne el consejo?"
+    TEXTO = '<file path="a.md">\nEl consejo se reúne tres veces.\n</file>\n'
+
+    def test_la_pregunta_va_despues_del_documento(self):
+        _, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
+        self.assertGreater(usuario.index(self.PREGUNTA), usuario.index(self.TEXTO))
+        self.assertTrue(usuario.rstrip().endswith("Answer:"))
+
+    def test_el_prompt_lleva_ejemplo_y_no_consta(self):
+        sistema, _ = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
+        self.assertIn("Example", sistema)
+        self.assertIn("NO CONSTA", sistema)
+        self.assertIn("La junta se reúne dos veces al año", sistema)
+
+    def test_variante_desconocida(self):
+        with self.assertRaises(ValueError):
+            _mensajes_bulk(self.PREGUNTA, self.TEXTO, "actual")
+
+    def test_el_ejemplo_usa_el_mismo_envoltorio_que_los_trozos_reales(self):
+        sistema, _ = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
+        self.assertIn('<file path="ejemplo.md">', sistema)
+
+    def test_una_sola_linea_en_blanco_entre_el_documento_y_la_pregunta(self):
+        _, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
+        self.assertEqual(usuario.count("</file>\n\nQuestion:"), 1)
+        self.assertNotIn("</file>\n\n\nQuestion:", usuario)
+
+    def test_el_recordatorio_de_pregunta_al_final_describe_la_cita_indentada(self):
+        _, usuario = _mensajes_bulk(self.PREGUNTA, self.TEXTO, "pregunta_al_final")
+        self.assertIn("  > ", usuario)
+
+    def test_bulk_read_usa_el_prompt_vigente(self):
+        with tempfile.TemporaryDirectory() as d:
+            ruta = os.path.join(d, "a.md")
+            with open(ruta, "w", encoding="utf-8") as f:
+                f.write("texto sin relación\n")
+            cfg = Config.from_env({"SHUNT_CACHE_MAX": "0"})
+            backend = BackendFalso(["NO CONSTA"])
+            bulk_read(cfg, "¿Plazo?", [ruta], backend=backend)
+            self.assertIs(backend.llamadas[0]["system"], cheap_worker_core.SYSTEM_BULK)
+            self.assertTrue(backend.llamadas[0]["user"].rstrip().endswith("Answer:"))
 
 
 if __name__ == "__main__":

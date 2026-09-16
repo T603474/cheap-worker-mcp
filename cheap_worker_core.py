@@ -115,8 +115,8 @@ class Config:
             raise InputError(
                 "SHUNT_RESERVE_TOKENS ya no existe: la reserva se deriva del techo "
                 "de salida de cada herramienta. Quítala y usa SHUNT_RESERVE_EXTRA "
-                "(margen para el prompt de sistema, 256 por defecto) si necesitas "
-                "ajustarla."
+                "(margen para el texto fijo de los mensajes, 512 por defecto) si "
+                "necesitas ajustarla."
             )
 
         # Cada herramienta cae al valor comun si no tiene el suyo, para que un
@@ -133,7 +133,7 @@ class Config:
                 max_ctx_tokens=int(env.get("SHUNT_MAX_CTX_TOKENS", "4096")),
                 output_bulk=int(env.get("SHUNT_MAX_OUTPUT_BULK", salida or "512")),
                 output_code=int(env.get("SHUNT_MAX_OUTPUT_CODE", salida or "2048")),
-                reserve_extra=int(env.get("SHUNT_RESERVE_EXTRA", "256")),
+                reserve_extra=int(env.get("SHUNT_RESERVE_EXTRA", "512")),
                 temp_bulk=float(env.get("SHUNT_TEMP_BULK", "0.2")),
                 temp_code=float(env.get("SHUNT_TEMP_CODE", "0.0")),
                 timeout=int(env.get("SHUNT_TIMEOUT", "600")),
@@ -349,7 +349,7 @@ class Backend:
 # cheap_worker_pertinencia): el umbral de cobertura, la longitud de raíz, las
 # palabras vacías o el análisis de números en letras, porque una respuesta
 # calculada con las reglas antiguas puede diferir de la que darían las nuevas.
-FORMATO_RESPUESTA = "citas-verificadas-3"
+FORMATO_RESPUESTA = "citas-verificadas-4"
 
 
 def _clave_cache(perfil: Perfil, question: str, bloques, faltan) -> str:
@@ -362,8 +362,8 @@ def _clave_cache(perfil: Perfil, question: str, bloques, faltan) -> str:
     otro resumen.
     """
     h = hashlib.sha256()
-    partes = [FORMATO_RESPUESTA, perfil.modelo, str(perfil.salida_max), str(perfil.temperatura),
-              question, *bloques, *faltan]
+    partes = [FORMATO_RESPUESTA, VARIANTE_PROMPT, perfil.modelo, str(perfil.salida_max),
+              str(perfil.temperatura), question, *bloques, *faltan]
     for parte in partes:
         h.update(parte.encode("utf-8"))
         h.update(b"\0")
@@ -423,21 +423,58 @@ def _cache_podar(cfg: Config) -> None:
         pass
 
 
-# Prompt del lector. El del gist lo presentaba como analista de código y exigía
-# empezar cada viñeta por nombre, tipo y línea: con una tabla vacía no hay nada
-# que citar, y un modelo pequeño rellenaba. Ahora cada dato va con su cita, que
-# el servidor comprueba.
-SYSTEM_BULK = (
-    "You read files (source code or documents, in any language) and answer a question about them.\n"
-    "Use ONLY what is written in the files. Never guess, never fill gaps, never invent numbers.\n"
-    "Answer in the language of the question.\n"
-    "Output format, and nothing else:\n"
-    "- <one fact that answers the question>\n"
-    "  > <exact text copied character by character from the files that proves the fact>\n"
-    "One bullet per fact. Every bullet needs its quote line. Copy the quote literally: "
-    "do not translate, summarize or fix it.\n"
-    "If the files do not contain the answer, output exactly: NO CONSTA"
+# Prompt del lector. La medición (resultados en el README, sección
+# "Con documentos: evaluación"; diseño en
+# docs/superpowers/specs/2026-09-15-prompt-citas-design.md) comparó tres
+# variantes con las mismas preguntas: la pregunta antes del documento (formato
+# del gist original), la pregunta repetida tras el documento con un
+# recordatorio del formato, y una variante con la cita antes de la afirmación.
+# Ganó la pregunta al final: el modelo deja de olvidarla y de resumir el
+# documento cuando la ventana no le cabe entera. SYSTEM_BULK enseña el formato
+# con un ejemplo inventado que usa el mismo envoltorio `<file>` que los trozos
+# reales.
+_EJEMPLO_DOCUMENTO = (
+    'Files:\n<file path="ejemplo.md">\nArtículo 4. La junta se reúne dos veces al año. '
+    'Sus acuerdos requieren mayoría simple.\n</file>\n'
 )
+
+SYSTEM_BULK = (
+    "You answer ONE question using ONLY the files the user sends. Never summarize the files, "
+    "never guess, never invent numbers. Answer in the language of the question.\n"
+    "For each fact that answers the question, write two lines:\n"
+    "- <the fact>\n"
+    "  > <a sentence copied character by character from the files that proves it>\n"
+    "The quote must be copied from the files, never written by you.\n"
+    "If the files do not answer the question, write only: NO CONSTA\n\n"
+    "Example.\n"
+    + _EJEMPLO_DOCUMENTO
+    + "Question: ¿Cuántas veces se reúne la junta?\n"
+    "Answer:\n"
+    "- La junta se reúne dos veces al año.\n"
+    "  > La junta se reúne dos veces al año\n"
+    "Question: ¿Quién preside la junta?\n"
+    "Answer:\n"
+    "NO CONSTA"
+)
+
+# El mecanismo de variantes queda para futuros experimentos, con una sola
+# variante activa: la que ganó la medición.
+VARIANTES_PROMPT = ("pregunta_al_final",)
+VARIANTE_PROMPT = "pregunta_al_final"
+
+_RECORDATORIO_BULK = (
+    "Answer only this question, do not summarize. Every fact is a line \"- \" followed by an "
+    "indented line \"  > \" with a quote copied from the files. If the files do not answer it, "
+    "write NO CONSTA.\nAnswer:\n"
+)
+
+
+def _mensajes_bulk(pregunta, texto_bloque, variante):
+    """(system, user) de una llamada de bulk_read según la variante del prompt."""
+    if variante != "pregunta_al_final":
+        raise ValueError(f"Variante de prompt desconocida: {variante}")
+    usuario = f"Files:\n{texto_bloque}\nQuestion: {pregunta}\n{_RECORDATORIO_BULK}"
+    return SYSTEM_BULK, usuario
 
 
 def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
@@ -449,7 +486,14 @@ def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
     """
     backend = backend if backend is not None else Backend(cfg)
     perfil = cfg.perfil_bulk
-    troceado = chunk_files(paths, perfil.presupuesto)
+    presupuesto_archivos = perfil.presupuesto - estimate_tokens(question)
+    if presupuesto_archivos <= 0:
+        raise InputError(
+            f"La pregunta ocupa {estimate_tokens(question)} tokens estimados y no deja "
+            f"presupuesto para los archivos en la ventana configurada (SHUNT_MAX_CTX_TOKENS="
+            f"{cfg.max_ctx_tokens}). Sube SHUNT_MAX_CTX_TOKENS o acorta la pregunta."
+        )
+    troceado = chunk_files(paths, presupuesto_archivos)
 
     if not troceado.blocks:
         motivos = "; ".join(f"{ruta}: {motivo}" for ruta, motivo in troceado.missing)
@@ -469,7 +513,8 @@ def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
     verificadas = []
     descartes = Counter()
     for bloque in troceado.blocks:
-        respuesta = backend.chat(perfil, SYSTEM_BULK, f"Question: {question}\n\nFiles:\n{bloque.texto}")
+        sistema, usuario = _mensajes_bulk(question, bloque.texto, VARIANTE_PROMPT)
+        respuesta = backend.chat(perfil, sistema, usuario)
         buenas, malas = verificar_respuesta(respuesta, bloque.tramos, question)
         verificadas.extend(buenas)
         descartes.update(malas)

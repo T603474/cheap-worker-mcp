@@ -13,7 +13,7 @@ class TestConfigFromEnv(unittest.TestCase):
         self.assertEqual(cfg.max_ctx_tokens, 4096)
         self.assertEqual(cfg.output_bulk, 512)
         self.assertEqual(cfg.output_code, 2048)
-        self.assertEqual(cfg.reserve_extra, 256)
+        self.assertEqual(cfg.reserve_extra, 512)
         self.assertEqual(cfg.temp_bulk, 0.2)
         self.assertEqual(cfg.temp_code, 0.0)
         self.assertEqual(cfg.timeout, 600)
@@ -92,34 +92,27 @@ class TestPerfilesPorHerramienta(unittest.TestCase):
 class TestInvarianteDelPresupuesto(unittest.TestCase):
     """Antes habia que mantener la coherencia a mano; ahora es estructural."""
 
-    def test_el_margen_cubre_el_prompt_de_sistema(self):
-        from cheap_worker_core import SYSTEM_BULK, SYSTEM_CODE, estimate_tokens
+    def _fijo(self):
+        """Tokens de los mensajes que no son el documento, del prompt vigente y de code_write."""
+        from cheap_worker_core import SYSTEM_CODE, VARIANTE_PROMPT, _mensajes_bulk, estimate_tokens
 
+        sistema, usuario = _mensajes_bulk("", "", VARIANTE_PROMPT)
+        bulk = estimate_tokens(sistema) + estimate_tokens(usuario)
+        return max(bulk, estimate_tokens(SYSTEM_CODE))
+
+    def test_el_margen_cubre_el_texto_fijo_de_los_mensajes(self):
         cfg = Config.from_env({})
-        sistema = max(
-            estimate_tokens(SYSTEM_BULK),
-            estimate_tokens(SYSTEM_CODE),
-        )
-        self.assertLessEqual(
-            sistema, cfg.reserve_extra,
-            "el margen por defecto no cubre el prompt de sistema",
-        )
+        self.assertLessEqual(self._fijo(), cfg.reserve_extra,
+                             "el margen por defecto no cubre el texto fijo de los mensajes")
 
     def test_ninguna_herramienta_desborda_la_ventana(self):
-        from cheap_worker_core import SYSTEM_BULK, SYSTEM_CODE, estimate_tokens
-
-        sistema = max(
-            estimate_tokens(SYSTEM_BULK),
-            estimate_tokens(SYSTEM_CODE),
-        )
+        fijo = self._fijo()
         for ctx in ("4096", "8192", "16384"):
             cfg = Config.from_env({"SHUNT_MAX_CTX_TOKENS": ctx})
             for nombre, perfil in (("bulk", cfg.perfil_bulk), ("code", cfg.perfil_code)):
                 with self.subTest(ctx=ctx, herramienta=nombre):
-                    self.assertLessEqual(
-                        perfil.presupuesto + perfil.salida_max + sistema,
-                        cfg.max_ctx_tokens,
-                    )
+                    self.assertLessEqual(perfil.presupuesto + perfil.salida_max + fijo,
+                                         cfg.max_ctx_tokens)
 
     def test_un_presupuesto_negativo_se_rechaza_al_configurar(self):
         # Techo de salida igual a la ventana entera: no queda sitio para nada.
@@ -135,6 +128,7 @@ class TestInvarianteDelPresupuesto(unittest.TestCase):
         mensaje = str(ctx.exception)
         self.assertIn("SHUNT_RESERVE_TOKENS", mensaje)
         self.assertIn("SHUNT_RESERVE_EXTRA", mensaje)
+        self.assertIn("512", mensaje)
 
 
 if __name__ == "__main__":
