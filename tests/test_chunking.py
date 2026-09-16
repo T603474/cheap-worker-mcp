@@ -104,6 +104,15 @@ class TestChunkFiles(unittest.TestCase):
         path = self._write("a.py", "x\n")
         self.assertIsInstance(chunk_files([path], budget=1000), ChunkResult)
 
+    def test_codigo_y_documentos_van_en_bloques_distintos(self):
+        codigo = self._write("a.py", "x = 1\n")
+        documento = self._write("b.md", "texto\n")
+        result = chunk_files([codigo, documento], budget=1000)
+        self.assertEqual(len(result.blocks), 2)
+        self.assertEqual([b.es_codigo for b in result.blocks], [False, True])
+        self.assertEqual([t.ruta for t in result.blocks[0].tramos], [documento])
+        self.assertEqual([t.ruta for t in result.blocks[1].tramos], [codigo])
+
 
 if __name__ == "__main__":
     unittest.main()

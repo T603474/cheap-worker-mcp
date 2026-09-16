@@ -47,6 +47,20 @@ class TestConfigFromEnv(unittest.TestCase):
             Config.from_env({"SHUNT_MAX_CTX_TOKENS": "cuatro mil"})
         self.assertIn("SHUNT_", str(ctx.exception))
 
+    def test_modelo_de_lectura_de_codigo_por_defecto_es_el_de_bulk(self):
+        cfg = Config.from_env({"SHUNT_MODEL_BULK": "gemma3:4b"})
+        self.assertEqual(cfg.model_bulk_code, "gemma3:4b")
+        self.assertEqual(Config.from_env({}).model_bulk_code, Config.from_env({}).model_bulk)
+
+    def test_modelo_de_lectura_de_codigo_explicito(self):
+        cfg = Config.from_env({"SHUNT_MODEL_BULK": "gemma3:4b",
+                               "SHUNT_MODEL_BULK_CODE": "qwen2.5-coder:3b"})
+        self.assertEqual(cfg.model_bulk_code, "qwen2.5-coder:3b")
+        self.assertEqual(cfg.perfil_bulk_code.modelo, "qwen2.5-coder:3b")
+        self.assertEqual(cfg.perfil_bulk_code.salida_max, cfg.perfil_bulk.salida_max)
+        self.assertEqual(cfg.perfil_bulk_code.temperatura, cfg.perfil_bulk.temperatura)
+        self.assertEqual(cfg.perfil_bulk_code.presupuesto, cfg.perfil_bulk.presupuesto)
+
 
 class TestPerfilesPorHerramienta(unittest.TestCase):
     """Las dos herramientas piden cosas opuestas y no pueden compartir techo."""

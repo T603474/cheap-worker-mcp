@@ -12,10 +12,10 @@ import hashlib
 import os
 import requests
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Mapping, Optional
 
-from cheap_worker_extract import ExtraccionError, extraer
+from cheap_worker_extract import ExtraccionError, es_codigo, extraer
 from cheap_worker_verify import Tramo, componer, verificar_respuesta
 
 DEFAULT_API_BASE = "http://localhost:11434/v1"
@@ -70,6 +70,7 @@ class Config:
     api_base: str
     api_key: str
     model_bulk: str
+    model_bulk_code: str
     model_code: str
     max_ctx_tokens: int
     output_bulk: int
@@ -95,6 +96,16 @@ class Config:
     def perfil_bulk(self) -> Perfil:
         return Perfil(self.model_bulk, self.output_bulk, self.temp_bulk,
                       self._presupuesto(self.output_bulk))
+
+    @property
+    def perfil_bulk_code(self) -> Perfil:
+        """perfil_bulk con el modelo para leer código.
+
+        Leer código y leer prosa piden modelos distintos: el mejor con
+        documentos en español respondía flojo con código. Ventana, techo y
+        temperatura son los mismos, así que el presupuesto también.
+        """
+        return replace(self.perfil_bulk, modelo=self.model_bulk_code)
 
     @property
     def perfil_code(self) -> Perfil:
@@ -123,12 +134,14 @@ class Config:
         # .mcp.json que solo fija SHUNT_MODEL siga funcionando.
         modelo = env.get("SHUNT_MODEL", DEFAULT_MODEL)
         salida = env.get("SHUNT_MAX_OUTPUT_TOKENS")
+        modelo_bulk = env.get("SHUNT_MODEL_BULK", modelo)
 
         try:
             cfg = cls(
                 api_base=base,
                 api_key=env.get("SHUNT_API_KEY", ""),
-                model_bulk=env.get("SHUNT_MODEL_BULK", modelo),
+                model_bulk=modelo_bulk,
+                model_bulk_code=env.get("SHUNT_MODEL_BULK_CODE", modelo_bulk),
                 model_code=env.get("SHUNT_MODEL_CODE", modelo),
                 max_ctx_tokens=int(env.get("SHUNT_MAX_CTX_TOKENS", "4096")),
                 output_bulk=int(env.get("SHUNT_MAX_OUTPUT_BULK", salida or "512")),
@@ -176,6 +189,8 @@ class Bloque:
 
     texto: str
     tramos: list
+    # Código y documentos nunca comparten bloque: cada tipo va a su modelo.
+    es_codigo: bool = False
 
 
 @dataclass
@@ -239,7 +254,10 @@ def _agrupar_por_presupuesto(unidades, budget):
 
 
 def chunk_files(paths, budget) -> ChunkResult:
-    """Extrae, envuelve y agrupa archivos en bloques que quepan en el presupuesto."""
+    """Extrae, envuelve y agrupa archivos en bloques que quepan en el presupuesto.
+
+    Los de código y los de documentos van en bloques separados.
+    """
     no_leidos = []
     unidades = []
 
@@ -263,10 +281,13 @@ def chunk_files(paths, budget) -> ChunkResult:
             tramo = Tramo(path, orden, doc.lineas[inicio:fin], doc.ubicaciones[inicio:fin], inicio)
             unidades.append((texto, tramo))
 
-    blocks = [
-        Bloque("".join(texto for texto, _ in grupo), [tramo for _, tramo in grupo])
-        for grupo in _agrupar_por_presupuesto(unidades, budget)
-    ]
+    blocks = []
+    for codigo in (False, True):
+        del_tipo = [u for u in unidades if es_codigo(u[1].ruta) == codigo]
+        blocks.extend(
+            Bloque("".join(texto for texto, _ in grupo), [tramo for _, tramo in grupo], codigo)
+            for grupo in _agrupar_por_presupuesto(del_tipo, budget)
+        )
     return ChunkResult(blocks=blocks, missing=no_leidos)
 
 
@@ -352,17 +373,17 @@ class Backend:
 FORMATO_RESPUESTA = "citas-verificadas-4"
 
 
-def _clave_cache(perfil: Perfil, question: str, bloques, faltan) -> str:
+def _clave_cache(perfil: Perfil, question: str, bloques, faltan, modelo_codigo) -> str:
     """Huella de todo lo que determina la respuesta.
 
     Los bloques ya contienen el contenido de los archivos y sus rutas, así que
     sirven de huella del contenido sin volver a leer el disco: si un archivo
     cambia, cambia su bloque y cambia la clave. Van también el modelo y el
     techo de salida, porque un modelo distinto o una respuesta más corta dan
-    otro resumen.
+    otro resumen, y el modelo de lectura de código.
     """
     h = hashlib.sha256()
-    partes = [FORMATO_RESPUESTA, VARIANTE_PROMPT, perfil.modelo, str(perfil.salida_max),
+    partes = [FORMATO_RESPUESTA, VARIANTE_PROMPT, perfil.modelo, modelo_codigo, str(perfil.salida_max),
               str(perfil.temperatura), question, *bloques, *faltan]
     for parte in partes:
         h.update(parte.encode("utf-8"))
@@ -505,6 +526,7 @@ def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
         perfil, question,
         [bloque.texto for bloque in troceado.blocks],
         [f"{ruta}: {motivo}" for ruta, motivo in troceado.missing],
+        cfg.model_bulk_code,
     )
     guardado = _cache_leer(cfg, clave)
     if guardado is not None:
@@ -513,8 +535,9 @@ def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
     verificadas = []
     descartes = Counter()
     for bloque in troceado.blocks:
+        perfil_bloque = cfg.perfil_bulk_code if bloque.es_codigo else perfil
         sistema, usuario = _mensajes_bulk(question, bloque.texto, VARIANTE_PROMPT)
-        respuesta = backend.chat(perfil, sistema, usuario)
+        respuesta = backend.chat(perfil_bloque, sistema, usuario)
         buenas, malas = verificar_respuesta(respuesta, bloque.tramos, question)
         verificadas.extend(buenas)
         descartes.update(malas)
