@@ -485,7 +485,14 @@ def bulk_read(cfg: Config, question: str, paths, backend=None) -> str:
     """
     backend = backend if backend is not None else Backend(cfg)
     perfil = cfg.perfil_bulk
-    troceado = chunk_files(paths, perfil.presupuesto)
+    presupuesto_archivos = perfil.presupuesto - estimate_tokens(question)
+    if presupuesto_archivos <= 0:
+        raise InputError(
+            f"La pregunta ocupa {estimate_tokens(question)} tokens estimados y no deja "
+            f"presupuesto para los archivos en la ventana configurada (SHUNT_MAX_CTX_TOKENS="
+            f"{cfg.max_ctx_tokens}). Sube SHUNT_MAX_CTX_TOKENS o acorta la pregunta."
+        )
+    troceado = chunk_files(paths, presupuesto_archivos)
 
     if not troceado.blocks:
         motivos = "; ".join(f"{ruta}: {motivo}" for ruta, motivo in troceado.missing)

@@ -4,7 +4,7 @@ import unittest
 import zipfile
 
 import cheap_worker_core
-from cheap_worker_core import BudgetError, Config, SYSTEM_BULK, _mensajes_bulk, bulk_read
+from cheap_worker_core import BudgetError, Config, InputError, SYSTEM_BULK, _mensajes_bulk, bulk_read
 from tests.helpers import BackendFalso
 
 
@@ -111,6 +111,49 @@ class TestBulkRead(unittest.TestCase):
         resultado = bulk_read(self.cfg, "¿Qué mayoría exige la reforma del estatuto?", [path], backend=backend)
         self.assertTrue(resultado.startswith("No consta en los documentos."))
         self.assertIn("1 con cita ajena a la pregunta", resultado)
+
+    def test_una_pregunta_que_no_deja_presupuesto_lanza_inputerror(self):
+        # Con la config por defecto (ventana 4096, salida bulk 512, margen 512)
+        # el presupuesto de archivos es 3072 tokens. Una pregunta de 5000
+        # palabras ronda los 10000 tokens: no cabe ni ella sola.
+        path = self._write("a.md", "contenido irrelevante\n")
+        cfg = Config.from_env({"SHUNT_CACHE_MAX": "0"})
+        pregunta_larga = "¿" + "palabra " * 5000 + "?"
+        backend = BackendFalso([])
+        with self.assertRaises(InputError) as ctx:
+            bulk_read(cfg, pregunta_larga, [path], backend=backend)
+        mensaje = str(ctx.exception)
+        self.assertIn("pregunta", mensaje)
+        self.assertIn("SHUNT_MAX_CTX_TOKENS", mensaje)
+        self.assertEqual(backend.llamadas, [])
+
+    def test_una_pregunta_larga_deja_menos_presupuesto_y_trocea_mas(self):
+        # Ventana pequeña para que el efecto de la pregunta sobre el
+        # presupuesto sea visible con archivos cortos. presupuesto bulk =
+        # 1024 - 128 (salida) - 512 (margen) = 384 tokens.
+        cfg = Config.from_env({"SHUNT_MAX_CTX_TOKENS": "1024", "SHUNT_MAX_OUTPUT_BULK": "128",
+                                "SHUNT_MAX_OUTPUT_CODE": "128", "SHUNT_RESERVE_EXTRA": "512",
+                                "SHUNT_CACHE_MAX": "0"})
+        # El archivo envuelto en <file> pesa 309 tokens: cabe en 384 - 1 = 383
+        # (con la pregunta corta, 1 token) pero no en 384 - 200 = 184 (con la
+        # pregunta larga, 200 tokens), así que con la pregunta larga tiene que
+        # trocearse en más de un bloque. Necesita varias líneas: una sola
+        # línea que desborda el presupuesto se manda entera igualmente (caso
+        # patológico de _split_lines_to_budget), sin producir más llamadas.
+        linea = "el archivo dice esto y aquello sin mucha relevancia real."
+        contenido = (linea + "\n") * 20
+        path = self._write("a.md", contenido)
+        pregunta_corta = "q"
+        pregunta_larga = "palabra " * 100
+
+        backend_corta = BackendFalso(["NO CONSTA"])
+        bulk_read(cfg, pregunta_corta, [path], backend=backend_corta)
+
+        backend_larga = BackendFalso(["NO CONSTA", "NO CONSTA", "NO CONSTA"])
+        bulk_read(cfg, pregunta_larga, [path], backend=backend_larga)
+
+        self.assertEqual(len(backend_corta.llamadas), 1)
+        self.assertGreater(len(backend_larga.llamadas), len(backend_corta.llamadas))
 
     def test_lee_un_docx_y_ubica_por_parrafo(self):
         ruta = os.path.join(self.dir.name, "a.docx")
