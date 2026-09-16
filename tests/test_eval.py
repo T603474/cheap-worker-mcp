@@ -1,4 +1,6 @@
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import tempfile
@@ -55,7 +57,8 @@ class TestVariantes(unittest.TestCase):
 
         caso = {"archivo": "x.md", "pregunta": "¿?", "tipo": "sin_respuesta", "esperado": []}
         with mock.patch.object(self.ev.core, "bulk_read", falso), \
-                mock.patch.object(self.ev.core, "VARIANTE_PROMPT", "pregunta_al_final"):
+                mock.patch.object(self.ev.core, "VARIANTE_PROMPT", "pregunta_al_final"), \
+                contextlib.redirect_stdout(io.StringIO()):
             filas = self.ev.evaluar("modelo:3b", [caso], None, "otra")
         self.assertEqual(vistas, ["otra"])
         self.assertTrue(filas[0]["ok"])
@@ -72,7 +75,8 @@ class TestVariantes(unittest.TestCase):
             with open(ruta, "w", encoding="utf-8") as f:
                 json.dump([], f)
             with mock.patch.object(self.ev, "evaluar", falso), \
-                    mock.patch.object(self.ev.core, "VARIANTES_PROMPT", ("v1", "v2")):
+                    mock.patch.object(self.ev.core, "VARIANTES_PROMPT", ("v1", "v2")), \
+                    contextlib.redirect_stdout(io.StringIO()):
                 self.ev.main([ruta, "--modelos", "a,b", "--variantes", "v1,v2"])
         self.assertEqual(llamadas, [("a", "v1"), ("a", "v2"),
                                     ("b", "v1"), ("b", "v2")])
@@ -82,8 +86,24 @@ class TestVariantes(unittest.TestCase):
             ruta = os.path.join(d, "p.json")
             with open(ruta, "w", encoding="utf-8") as f:
                 json.dump([], f)
-            with self.assertRaises(SystemExit):
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
                 self.ev.main([ruta, "--modelos", "a", "--variantes", "inventada"])
+
+    def test_lista_de_modelos_vacia_se_rechaza(self):
+        with tempfile.TemporaryDirectory() as d:
+            ruta = os.path.join(d, "p.json")
+            with open(ruta, "w", encoding="utf-8") as f:
+                json.dump([], f)
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                self.ev.main([ruta, "--modelos", " , ", "--variantes", "pregunta_al_final"])
+
+    def test_lista_de_variantes_vacia_se_rechaza(self):
+        with tempfile.TemporaryDirectory() as d:
+            ruta = os.path.join(d, "p.json")
+            with open(ruta, "w", encoding="utf-8") as f:
+                json.dump([], f)
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                self.ev.main([ruta, "--modelos", "a", "--variantes", " , "])
 
 
 if __name__ == "__main__":

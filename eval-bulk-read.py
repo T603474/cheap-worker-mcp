@@ -144,15 +144,21 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     variantes = [v.strip() for v in args.variantes.split(",") if v.strip()]
+    if not variantes:
+        parser.error("indica al menos una variante")
     desconocidas = [v for v in variantes if v not in core.VARIANTES_PROMPT]
     if desconocidas:
         parser.error("variantes desconocidas: " + ", ".join(desconocidas))
+
+    modelos = [m.strip() for m in args.modelos.split(",") if m.strip()]
+    if not modelos:
+        parser.error("indica al menos un modelo")
 
     with open(args.preguntas, encoding="utf-8") as f:
         casos = json.load(f)
 
     resumenes = []
-    for modelo in [m.strip() for m in args.modelos.split(",") if m.strip()]:
+    for modelo in modelos:
         for variante in variantes:
             print(f"\n== {modelo} [{variante}]", flush=True)
             resumenes.append(resumen(f"{modelo} [{variante}]",
