@@ -1,6 +1,9 @@
 import importlib.util
+import json
 import os
+import tempfile
 import unittest
+from unittest import mock
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -37,6 +40,49 @@ class TestAcierta(unittest.TestCase):
     def test_sin_respuesta_no_cambia(self):
         self.assertTrue(self.ev.acierta({"tipo": "sin_respuesta", "esperado": []},
                                         "No consta en los documentos."))
+
+
+class TestVariantes(unittest.TestCase):
+    def setUp(self):
+        self.ev = cargar_eval()
+
+    def test_evaluar_fija_la_variante_durante_la_llamada(self):
+        vistas = []
+
+        def falso(cfg, pregunta, rutas, backend=None):
+            vistas.append(self.ev.core.VARIANTE_PROMPT)
+            return "No consta en los documentos."
+
+        caso = {"archivo": "x.md", "pregunta": "¿?", "tipo": "sin_respuesta", "esperado": []}
+        with mock.patch.object(self.ev.core, "bulk_read", falso), \
+                mock.patch.object(self.ev.core, "VARIANTE_PROMPT", "actual"):
+            filas = self.ev.evaluar("modelo:3b", [caso], None, "cita_primero")
+        self.assertEqual(vistas, ["cita_primero"])
+        self.assertTrue(filas[0]["ok"])
+
+    def test_main_recorre_modelos_por_variantes(self):
+        llamadas = []
+
+        def falso(modelo, casos, salida, variante):
+            llamadas.append((modelo, variante))
+            return []
+
+        with tempfile.TemporaryDirectory() as d:
+            ruta = os.path.join(d, "p.json")
+            with open(ruta, "w", encoding="utf-8") as f:
+                json.dump([], f)
+            with mock.patch.object(self.ev, "evaluar", falso):
+                self.ev.main([ruta, "--modelos", "a,b", "--variantes", "actual,cita_primero"])
+        self.assertEqual(llamadas, [("a", "actual"), ("a", "cita_primero"),
+                                    ("b", "actual"), ("b", "cita_primero")])
+
+    def test_variante_desconocida_se_rechaza(self):
+        with tempfile.TemporaryDirectory() as d:
+            ruta = os.path.join(d, "p.json")
+            with open(ruta, "w", encoding="utf-8") as f:
+                json.dump([], f)
+            with self.assertRaises(SystemExit):
+                self.ev.main([ruta, "--modelos", "a", "--variantes", "inventada"])
 
 
 if __name__ == "__main__":

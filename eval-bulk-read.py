@@ -3,6 +3,7 @@
 
 Uso:
   python eval-bulk-read.py preguntas.json --modelos qwen2.5:3b,llama3.2:3b [--salida DIR]
+    [--variantes actual,pregunta_al_final,cita_primero]
 
 preguntas.json es una lista de objetos:
   {"archivo": "ruta", "pregunta": "...",
@@ -78,42 +79,47 @@ def sin_formato(resultado):
     return int(m.group(1)) if m else 0
 
 
-def evaluar(modelo, casos, salida):
+def evaluar(modelo, casos, salida, variante):
     env = dict(os.environ)
     env["SHUNT_MODEL_BULK"] = modelo
     env["SHUNT_CACHE_MAX"] = "0"
     cfg = core.Config.from_env(env)
 
-    filas = []
-    volcado = []
-    for caso in casos:
-        backend = BackendContado(cfg)
-        inicio = time.monotonic()
-        try:
-            resultado = core.bulk_read(cfg, caso["pregunta"], [caso["archivo"]], backend=backend)
-            error = None
-        except core.ShuntError as e:
-            resultado, error = "", str(e)
-        segundos = time.monotonic() - inicio
-        ok = error is None and acierta(caso, resultado)
-        filas.append({"tipo": caso["tipo"], "ok": ok, "segundos": segundos,
-                      "llamadas": backend.llamadas, "descartadas": descartadas(resultado),
-                      "sin_formato": sin_formato(resultado), "error": error})
-        marca = "OK" if ok else "--"
-        aviso = f"  ERROR: {error}" if error else ""
-        print(f"  [{marca}] {caso['tipo']:13} {segundos:6.1f}s {backend.llamadas:2} llamadas  "
-              f"{caso['pregunta'][:60]}{aviso}", flush=True)
-        volcado.append(f"### [{marca}] {caso['pregunta']}\n\n{error or resultado}\n")
+    anterior = core.VARIANTE_PROMPT
+    core.VARIANTE_PROMPT = variante
+    try:
+        filas = []
+        volcado = []
+        for caso in casos:
+            backend = BackendContado(cfg)
+            inicio = time.monotonic()
+            try:
+                resultado = core.bulk_read(cfg, caso["pregunta"], [caso["archivo"]], backend=backend)
+                error = None
+            except core.ShuntError as e:
+                resultado, error = "", str(e)
+            segundos = time.monotonic() - inicio
+            ok = error is None and acierta(caso, resultado)
+            filas.append({"tipo": caso["tipo"], "ok": ok, "segundos": segundos,
+                          "llamadas": backend.llamadas, "descartadas": descartadas(resultado),
+                          "sin_formato": sin_formato(resultado), "error": error})
+            marca = "OK" if ok else "--"
+            aviso = f"  ERROR: {error}" if error else ""
+            print(f"  [{marca}] {caso['tipo']:13} {segundos:6.1f}s {backend.llamadas:2} llamadas  "
+                  f"{caso['pregunta'][:60]}{aviso}", flush=True)
+            volcado.append(f"### [{marca}] {caso['pregunta']}\n\n{error or resultado}\n")
 
-    if salida:
-        os.makedirs(salida, exist_ok=True)
-        nombre = re.sub(r"[^\w.-]", "_", modelo) + ".md"
-        with open(os.path.join(salida, nombre), "w", encoding="utf-8") as f:
-            f.write("\n".join(volcado))
-    return filas
+        if salida:
+            os.makedirs(salida, exist_ok=True)
+            nombre = re.sub(r"[^\w.-]", "_", f"{modelo}__{variante}") + ".md"
+            with open(os.path.join(salida, nombre), "w", encoding="utf-8") as f:
+                f.write("\n".join(volcado))
+        return filas
+    finally:
+        core.VARIANTE_PROMPT = anterior
 
 
-def resumen(modelo, filas):
+def resumen(etiqueta, filas):
     por_tipo = defaultdict(lambda: [0, 0])
     for fila in filas:
         por_tipo[fila["tipo"]][0] += fila["ok"]
@@ -124,7 +130,7 @@ def resumen(modelo, filas):
     descartes = sum(f["descartadas"] for f in filas)
     sin_formatos = sum(f["sin_formato"] for f in filas)
     errores = sum(1 for f in filas if f["error"])
-    return (f"{modelo:22} {aciertos} | descartadas {descartes} | sin_formato {sin_formatos} | "
+    return (f"{etiqueta:34} {aciertos} | descartadas {descartes} | sin_formato {sin_formatos} | "
             f"errores {errores} | {tiempo:.0f}s en {llamadas} llamadas")
 
 
@@ -133,15 +139,24 @@ def main(argv=None):
     parser.add_argument("preguntas")
     parser.add_argument("--modelos", required=True, help="lista separada por comas")
     parser.add_argument("--salida", help="directorio donde volcar cada respuesta")
+    parser.add_argument("--variantes", default=core.VARIANTE_PROMPT,
+                        help="variantes del prompt separadas por comas: " + ", ".join(core.VARIANTES_PROMPT))
     args = parser.parse_args(argv)
+
+    variantes = [v.strip() for v in args.variantes.split(",") if v.strip()]
+    desconocidas = [v for v in variantes if v not in core.VARIANTES_PROMPT]
+    if desconocidas:
+        parser.error("variantes desconocidas: " + ", ".join(desconocidas))
 
     with open(args.preguntas, encoding="utf-8") as f:
         casos = json.load(f)
 
     resumenes = []
     for modelo in [m.strip() for m in args.modelos.split(",") if m.strip()]:
-        print(f"\n== {modelo}", flush=True)
-        resumenes.append(resumen(modelo, evaluar(modelo, casos, args.salida)))
+        for variante in variantes:
+            print(f"\n== {modelo} [{variante}]", flush=True)
+            resumenes.append(resumen(f"{modelo} [{variante}]",
+                                     evaluar(modelo, casos, args.salida, variante)))
 
     print("\n== Resumen")
     for linea in resumenes:
