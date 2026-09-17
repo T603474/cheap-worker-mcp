@@ -150,7 +150,24 @@ def leer_umbral():
     return umbral if umbral > 0 else UMBRAL_POR_DEFECTO
 
 
+VALORES_DESACTIVADO = {"0", "off", "no", "false"}
+
+
+def bloqueo_desactivado():
+    """SHUNT_BLOQUEO=0 (u off/no/false) apaga el hook.
+
+    Sirve para desactivarlo en un proyecto concreto desde su
+    .claude/settings.local.json cuando está declarado a nivel de usuario: el
+    `env` del proyecto prevalece sobre el global. Cualquier otro valor, o
+    ninguno, deja el bloqueo activo.
+    """
+    return os.environ.get("SHUNT_BLOQUEO", "").strip().lower() in VALORES_DESACTIVADO
+
+
 def main():
+    if bloqueo_desactivado():
+        permitir()
+
     umbral = leer_umbral()
 
     try:

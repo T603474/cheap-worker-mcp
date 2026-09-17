@@ -11,10 +11,12 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOOK = os.path.join(RAIZ, "hooks", "bloquear-lectura-grande.py")
 
 
-def ejecutar(entrada, umbral=None):
-    env = {k: v for k, v in os.environ.items() if k != "SHUNT_MIN_LINES"}
+def ejecutar(entrada, umbral=None, bloqueo=None):
+    env = {k: v for k, v in os.environ.items() if k not in ("SHUNT_MIN_LINES", "SHUNT_BLOQUEO")}
     if umbral is not None:
         env["SHUNT_MIN_LINES"] = umbral
+    if bloqueo is not None:
+        env["SHUNT_BLOQUEO"] = bloqueo
     p = subprocess.run([sys.executable, HOOK], input=json.dumps(entrada),
                        capture_output=True, text=True, env=env)
     decision = None
@@ -92,6 +94,30 @@ class TestSoloArchivosDeCodigo(unittest.TestCase):
                 ruta = self._archivo(sufijo)
                 entrada = {"tool_name": "Read", "tool_input": {"file_path": ruta}}
                 self.assertEqual(ejecutar(entrada)[1], "deny")
+
+
+class TestDesactivarElBloqueo(unittest.TestCase):
+    """SHUNT_BLOQUEO=0 apaga el hook en un proyecto sin tocar la configuración global."""
+
+    def setUp(self):
+        fd, self.ruta = tempfile.mkstemp(suffix=".py")
+        with os.fdopen(fd, "w") as f:
+            f.write("x = 1\n" * 400)
+        self.addCleanup(os.remove, self.ruta)
+        self.leer = {"tool_name": "Read", "tool_input": {"file_path": self.ruta}}
+        self.cat = {"tool_name": "Bash",
+                    "tool_input": {"command": f'cat "{self.ruta.replace(chr(92), "/")}"'}}
+
+    def test_valores_que_desactivan(self):
+        for valor in ("0", "off", "no", "false", "OFF", " 0 "):
+            with self.subTest(valor=valor):
+                self.assertIsNone(ejecutar(self.leer, bloqueo=valor)[1])
+                self.assertIsNone(ejecutar(self.cat, bloqueo=valor)[1])
+
+    def test_cualquier_otro_valor_mantiene_el_bloqueo(self):
+        for valor in ("1", "on", "", "si"):
+            with self.subTest(valor=valor):
+                self.assertEqual(ejecutar(self.leer, bloqueo=valor)[1], "deny")
 
 
 if __name__ == "__main__":

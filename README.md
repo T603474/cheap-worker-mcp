@@ -67,15 +67,23 @@ Sobre `cheap_worker_core.py`, 473 líneas, con `qwen2.5-coder:7b`:
 En cualquier equipo, tras clonar el repositorio:
 
 ```powershell
-.\setup-ollama.ps1      # comprueba dependencias, descarga modelos, ajusta .mcp.json
+.\setup-ollama.ps1      # comprueba Python, requests y Ollama; descarga los modelos de despliegue.json
 .\start-ollama.ps1      # en otra terminal
+mise exec -- python.exe desplegar.py instalar --ambito usuario
 ```
 
-Y reinicia Claude Code para que lea `.mcp.json`. Las herramientas aparecerán como `bulk_read` y `code_write`.
+Y reinicia Claude Code. Las herramientas aparecerán como `bulk_read` y `code_write`.
 
-`setup-ollama.ps1` es obligatorio en un equipo nuevo, no opcional: `.mcp.json` guarda la ruta **absoluta** del servidor, así que la del equipo anterior no sirve. El script la reescribe con la de donde esté el proyecto. También comprueba Python y `requests` —la única dependencia— y descarga los modelos que `.mcp.json` declare, leyéndolos de ahí para que script y configuración no se separen.
+`desplegar.py` registra el servidor y el hook de bloqueo con el alcance que elijas:
 
-No genera ningún archivo de código: el servidor vive en el repositorio y se versiona.
+- `usuario`: todos tus proyectos. Es el recomendado.
+- `proyecto`: un `.mcp.json` versionable.
+- `local`: un proyecto, solo para ti.
+- `desktop`: el chat de Claude Desktop.
+
+Con el mismo script se deshabilita en un proyecto o se desinstala. Todo está en **[DESPLIEGUE.md](DESPLIEGUE.md)**.
+
+Los valores que se despliegan (modelos, ventana, umbral) salen de `despliegue.json`, o de `despliegue.local.json` si existe. El repositorio no trae `.mcp.json` ni hooks activos: las rutas son absolutas y dependen de cada equipo.
 
 ## Comprobar que funciona
 
@@ -96,7 +104,7 @@ Las rutas van separadas por `|`. En modo CLI el resultado sale por stdout en tex
 
 ## Configuración
 
-Todo se ajusta en la sección `env` de `.mcp.json`. Ninguna variable es obligatoria: los valores por defecto funcionan.
+Todo se ajusta en la sección `env` de `despliegue.json` (o `despliegue.local.json`) y se aplica volviendo a ejecutar `desplegar.py instalar`. Si lo registraste a mano, en el `env` del servidor. Ninguna variable es obligatoria: los valores por defecto funcionan.
 
 | Variable | Defecto | Para qué |
 |---|---|---|
@@ -106,6 +114,7 @@ Todo se ajusta en la sección `env` de `.mcp.json`. Ninguna variable es obligato
 | `SHUNT_RESERVE_EXTRA` | `512` | Margen para el texto fijo de los mensajes (prompt de sistema, ejemplo y recordatorio) |
 | `SHUNT_TIMEOUT` | `600` | Segundos por llamada |
 | `SHUNT_MIN_LINES` | `350` | Umbral en líneas del hook de bloqueo — ver [Cambiar el umbral](#cambiar-el-umbral) |
+| `SHUNT_BLOQUEO` | *(activo)* | `0`, `off`, `no` o `false` apagan el hook — ver [Deshabilitar](DESPLIEGUE.md#4-deshabilitar-sin-desinstalar) |
 | `SHUNT_CACHE_DIR` | `.cache/cheap-worker` | Dónde se guardan las respuestas cacheadas |
 | `SHUNT_CACHE_MAX` | `200` | Entradas en caché; `0` la desactiva |
 
@@ -202,7 +211,7 @@ La caché es una optimización, nunca un requisito: si el directorio no se puede
 
 ## Enforcement
 
-`.claude/settings.json` instala un hook `PreToolUse` sobre `Read` que **deniega** leer archivos de **código** de más de `SHUNT_MIN_LINES` líneas y redirige a `bulk_read`.
+`desplegar.py instalar` declara un hook `PreToolUse` sobre `Read` y `Bash`, en el `settings.json` del ámbito elegido, que **deniega** leer archivos de **código** de más de `SHUNT_MIN_LINES` líneas y redirige a `bulk_read`.
 
 Los documentos (`.md`, `.txt`, `.csv`, `.json` y cualquier extensión que no sea de código) no se bloquean. `bulk_read` se midió con código, y con prosa inventaba: al resumir una ficha de 479 líneas devolvió rellena con cifras una tabla que en el original estaba vacía. Desde entonces, la lectura de documentos pasa por la verificación de citas descrita arriba: cada afirmación se descarta si su cita no aparece literal en el archivo. Ampliar este hook para que también cubra documentos queda pendiente de medir con `eval-bulk-read.py`; hasta entonces, empujar a usarlo con ellos sin datos que lo respalden es peor que leerlos enteros. La lista de extensiones está en `EXTENSIONES_CODIGO`, en el propio hook. El gist insiste en por qué hace falta:
 
@@ -233,33 +242,15 @@ Bloquear los casos de la derecha haría el shell inusable a cambio de nada.
 | El hook | bloquear la lectura | `env` de la configuración de Claude Code (`.claude/settings.json`, `.claude/settings.local.json` o `~/.claude/settings.json`) |
 | El servidor | anunciarlo en la descripción de `bulk_read` | `env` del servidor MCP (`.mcp.json`, `claude mcp add -e`, `claude_desktop_config.json`) |
 
-Ponerlo solo en `.mcp.json` no cambia el bloqueo: el hook no ve el entorno del servidor. Fíjalo en los dos con el mismo valor.
+Ponerlo solo en el `env` del servidor no cambia el bloqueo: el hook no ve ese entorno. Fíjalo en los dos con el mismo valor; `desplegar.py` ya lo hace con el de `despliegue.json`.
 
 Un valor que no sea un entero positivo se ignora y se usa 350, en los dos. Con `0` literal se bloquearía cualquier lectura.
 
-### Activarlo en todos tus proyectos
+### Dónde actúa y cómo apagarlo
 
-El hook de `.claude/settings.json` solo actúa dentro de este repositorio. Registrar el servidor con `claude mcp add --scope user` pone las herramientas en todos tus proyectos, pero no el bloqueo: fuera de aquí el modelo elige si las usa.
+El hook actúa donde lo haya declarado `desplegar.py`: todos tus proyectos con `--ambito usuario`, uno solo con `proyecto` o `local`. Si registras el servidor sin él (`--sin-hook`), las herramientas están pero el modelo elige si las usa.
 
-Para bloquear en todos, declara el hook en `~/.claude/settings.json` con la ruta absoluta del script:
-
-```json
-{
-  "env": { "SHUNT_MIN_LINES": "350" },
-  "hooks": {
-    "PreToolUse": [
-      { "matcher": "Read|Bash",
-        "hooks": [{ "type": "command", "timeout": 10,
-                    "command": "python",
-                    "args": ["C:/ruta/al/proyecto/hooks/bloquear-lectura-grande.py"] }] }
-    ]
-  }
-}
-```
-
-`args` hace que Claude Code lance el script sin pasar por una shell, así que la ruta no necesita comillas. Si gestionas Python con mise, usa `"command": "C:/Users/<tú>/AppData/Local/mise/bin/mise.exe"` y antepón `"exec", "--", "python.exe"` a `args`: el `.exe` hace falta porque un proceso lanzado sin shell puede no tener `PATHEXT`, y sin él mise no encuentra `python`.
-
-Dentro de este repositorio el hook correrá dos veces, el global y el del proyecto. Es inocuo: los dos toman la misma decisión.
+Para apagarlo en un proyecto sin tocar la instalación global, basta con `"env": { "SHUNT_BLOQUEO": "0" }` en su `.claude/settings.local.json`, o `desplegar.py deshabilitar --ambito local`, que además deniega las herramientas. Detalles y declaración a mano en [DESPLIEGUE.md](DESPLIEGUE.md).
 
 **Claude Desktop no tiene hooks.** Ahí no hay bloqueo posible; solo cuenta la descripción de `bulk_read`, que es una indicación y no una barrera.
 
@@ -299,7 +290,7 @@ Ollama sirve 4096 por defecto aunque el modelo admita más. Para subirla, fija l
 
 **5,5× de diferencia** entre caber y no caber. Bajar la cuantización sin bajar de tamaño no sirve: el Q3 sigue sin caber y encima paga más descuantización.
 
-La calidad del 3B resumiendo aguanta bien: cubre las mismas responsabilidades que el 7B, con menos anidamiento. Por eso la configuración por defecto de `.mcp.json` le da el 3B a `bulk_read`, que es lo frecuente, y reserva el 7B para `code_write`, donde la especialización en código sí se paga.
+La calidad del 3B resumiendo aguanta bien: cubre las mismas responsabilidades que el 7B, con menos anidamiento. Por eso la configuración de entonces le daba el 3B a `bulk_read`, que es lo frecuente, y reserva el 7B para `code_write`, donde la especialización en código sí se paga.
 
 **Código y documentos pueden usar modelos distintos.** `bulk_read` manda los archivos de código a `SHUNT_MODEL_BULK_CODE` y el resto a `SHUNT_MODEL_BULK`, en bloques separados. Un modelo de código (`qwen2.5-coder:3b`) lee bien código y mal prosa; uno generalista (`gemma3:4b`) al revés. Si una consulta mezcla los dos tipos y no caben ambos en la VRAM, Ollama cambia de modelo a mitad y tarda unos segundos más.
 
@@ -362,7 +353,7 @@ Por eso el hook sigue sin bloquear documentos: para extraer datos de un document
 
 **`gastó los N tokens de salida razonando`** — el modelo es de razonamiento. Cámbialo.
 
-**`Valor no numérico en una variable SHUNT_*`** — errata en la sección `env` de `.mcp.json`.
+**`Valor no numérico en una variable SHUNT_*`** — errata en la sección `env` de `despliegue.json` o de la configuración del cliente.
 
 **Resúmenes que ignoran parte del archivo** — `SHUNT_MAX_CTX_TOKENS` es mayor que la ventana que el backend sirve de verdad, y está recortando en silencio. Compruébala con `ollama ps`, columna `CONTEXT`. El endpoint OpenAI-compatible de Ollama no admite `num_ctx` por petición: para ampliarla hay que fijarla en un Modelfile y publicar una variante.
 
@@ -374,7 +365,7 @@ Por eso el hook sigue sin bloquear documentos: para extraer datos de un document
 
 - [`DESIGN-self-hosted.md`](DESIGN-self-hosted.md) — decisiones de diseño y por qué
 - [`PLAN-self-hosted.md`](PLAN-self-hosted.md) — el plan de implementación que se siguió
-- [`README-shared.md`](README-shared.md) — reutilizar el shunt en varios proyectos
+- [`DESPLIEGUE.md`](DESPLIEGUE.md) — instalar por usuario, proyecto, local o Claude Desktop; deshabilitar y desinstalar
 
 ---
 

@@ -2,7 +2,7 @@
 # Test suite para Ollama MCP
 
 # La ruta sale de la ubicacion del propio script, para que siga funcionando
-# cuando el proyecto se copie a otro sitio con copy-to-new-project.ps1.
+# cuando el proyecto se mueva o se clone en otro sitio.
 $ProjectPath = $PSScriptRoot
 
 Write-Host "Test MCP Ollama" -ForegroundColor Green

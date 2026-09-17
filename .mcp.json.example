@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "cheap-worker": {
+      "command": "C:/Users/<tu-usuario>/AppData/Local/mise/bin/mise.exe",
+      "args": [
+        "exec",
+        "--",
+        "python.exe",
+        "C:/Projects/cheap-worker-mcp/mcp-server-cheap-worker.py"
+      ],
+      "env": {
+        "SHUNT_API_BASE": "http://localhost:11434/v1",
+        "SHUNT_MODEL_BULK": "gemma3:4b",
+        "SHUNT_MODEL_BULK_CODE": "qwen2.5-coder:3b",
+        "SHUNT_MODEL_CODE": "qwen2.5-coder:7b",
+        "SHUNT_MAX_CTX_TOKENS": "8192",
+        "SHUNT_MAX_OUTPUT_BULK": "512",
+        "SHUNT_MAX_OUTPUT_CODE": "4096",
+        "SHUNT_MIN_LINES": "350",
+        "SHUNT_CACHE_DIR": "C:/Projects/cheap-worker-mcp/.cache/cheap-worker"
+      }
+    }
+  }
+}
