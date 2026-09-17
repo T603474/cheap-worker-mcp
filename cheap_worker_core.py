@@ -156,7 +156,7 @@ class Config:
         except ValueError as e:
             raise InputError(
                 f"Valor no numérico en una variable SHUNT_*: {e}. "
-                "Revisa la sección env de tu .mcp.json."
+                "Revisa el env del servidor (despliegue.json o la configuración del cliente MCP)."
             ) from e
 
         for nombre, perfil in (("bulk", cfg.perfil_bulk), ("code", cfg.perfil_code)):

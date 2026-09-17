@@ -12,3 +12,8 @@ generated_*.py
 
 # Cache de resumenes del cheap worker
 .cache/
+
+# Configuracion propia de cada equipo: se genera con desplegar.py
+.mcp.json
+despliegue.local.json
+*.bak

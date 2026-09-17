@@ -1,11 +1,10 @@
 # setup-ollama.ps1
-# Puesta en marcha del cheap worker en este equipo: comprueba las dependencias,
-# descarga los modelos que pide .mcp.json y deja la configuracion apuntando a
-# donde esta el proyecto.
+# Puesta en marcha del cheap worker en este equipo: comprueba las dependencias
+# y descarga los modelos que pide despliegue.json (o despliegue.local.json).
 #
-# Es lo primero que hay que ejecutar al clonar el repositorio en una maquina
-# nueva. Sin esto, .mcp.json conserva la ruta absoluta del equipo anterior y el
-# servidor no arranca.
+# No registra el servidor en ningun cliente: eso lo hace desplegar.py, con el
+# ambito que elijas (usuario, proyecto, local o Claude Desktop). Ver
+# DESPLIEGUE.md.
 #
 # Este script NO genera codigo. Antes lo hacia: escribia su propio servidor con
 # Ollama hardcodeado, la truncacion a 50 lineas y los errores devueltos como
@@ -13,55 +12,53 @@
 # servidor vive en el repositorio y se versiona.
 
 $ProjectPath = $PSScriptRoot
-$Mcp = Join-Path $ProjectPath ".mcp.json"
+$ConfigLocal = Join-Path $ProjectPath "despliegue.local.json"
+$Config = if (Test-Path $ConfigLocal) { $ConfigLocal } else { Join-Path $ProjectPath "despliegue.json" }
 
-
-# Windows PowerShell 5.1 escribe BOM con -Encoding UTF8, y json.load de Python
-# rechaza el BOM. Como este JSON lo leen tanto Claude Code como los scripts de
-# Python del proyecto, hay que escribirlo sin el.
-function Write-JsonSinBom {
-    param([string]$Ruta, $Objeto)
-    $texto = ($Objeto | ConvertTo-Json -Depth 10)
-    $sinBom = New-Object System.Text.UTF8Encoding $false
-    [System.IO.File]::WriteAllText($Ruta, $texto, $sinBom)
+# Con mise, Python se lanza siempre a traves de el: el python del PATH puede ser
+# otro, o el alias de la Microsoft Store.
+$UsaMise = [bool](Get-Command mise -ErrorAction SilentlyContinue)
+function Invoke-Python {
+    if ($UsaMise) { & mise exec -- python.exe @args } else { & python @args }
 }
+$PythonTexto = if ($UsaMise) { "mise exec -- python.exe" } else { "python" }
 
 Write-Host "=== Puesta en marcha del cheap worker ===" -ForegroundColor Green
 Write-Host "Proyecto: $ProjectPath" -ForegroundColor Yellow
 Write-Host ""
 
 # ---------------------------------------------------------------- 1. Python
-Write-Host "[1/5] Comprobando Python..." -ForegroundColor Cyan
-$version = & python --version 2>&1
+Write-Host "[1/4] Comprobando Python ($PythonTexto)..." -ForegroundColor Cyan
+$version = Invoke-Python --version 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: no se encuentra python en el PATH" -ForegroundColor Red
+    Write-Host "ERROR: no se puede ejecutar Python con: $PythonTexto" -ForegroundColor Red
     Write-Host "El servidor MCP es un script de Python 3. Instalalo y vuelve a ejecutar." -ForegroundColor Yellow
     exit 1
 }
 Write-Host "  OK $version" -ForegroundColor Green
 
 # ------------------------------------------------------------- 2. requests
-Write-Host "`n[2/5] Comprobando la libreria requests..." -ForegroundColor Cyan
-& python -c "import requests" 2>$null
+Write-Host "`n[2/4] Comprobando la libreria requests..." -ForegroundColor Cyan
+Invoke-Python -c "import requests" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: falta la libreria requests" -ForegroundColor Red
     Write-Host "Es la unica dependencia del proyecto. Instalala con:" -ForegroundColor Yellow
-    Write-Host "  python -m pip install requests" -ForegroundColor White
+    Write-Host "  $PythonTexto -m pip install requests" -ForegroundColor White
     exit 1
 }
-$reqVersion = & python -c "import requests; print(requests.__version__)"
+$reqVersion = Invoke-Python -c "import requests; print(requests.__version__)"
 Write-Host "  OK requests $reqVersion" -ForegroundColor Green
 
-& python -c "import pypdf" 2>$null
+Invoke-Python -c "import pypdf" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  AVISO: falta pypdf. Todo funciona salvo leer PDF. Para instalarla:" -ForegroundColor Yellow
-    Write-Host "    python -m pip install pypdf" -ForegroundColor White
+    Write-Host "    $PythonTexto -m pip install pypdf" -ForegroundColor White
 } else {
     Write-Host "  OK pypdf (lectura de PDF)" -ForegroundColor Green
 }
 
 # --------------------------------------------------------------- 3. Ollama
-Write-Host "`n[3/5] Comprobando Ollama..." -ForegroundColor Cyan
+Write-Host "`n[3/4] Comprobando Ollama..." -ForegroundColor Cyan
 $ollamaCheck = & ollama --version 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Ollama no esta instalado" -ForegroundColor Red
@@ -75,22 +72,22 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "  OK $ollamaCheck" -ForegroundColor Green
 
-# ------------------------------------- 4. Los modelos que .mcp.json declara
-Write-Host "`n[4/5] Descargando los modelos que pide .mcp.json..." -ForegroundColor Cyan
-if (-not (Test-Path $Mcp)) {
-    Write-Host "ERROR: no existe $Mcp" -ForegroundColor Red
+# ------------------------------------- 4. Los modelos que declara la configuracion
+Write-Host "`n[4/4] Descargando los modelos que pide $(Split-Path $Config -Leaf)..." -ForegroundColor Cyan
+if (-not (Test-Path $Config)) {
+    Write-Host "ERROR: no existe $Config" -ForegroundColor Red
     exit 1
 }
 
-$config = Get-Content $Mcp -Raw | ConvertFrom-Json
-$entorno = $config.mcpServers.'cheap-worker'.env
+$entorno = (Get-Content $Config -Raw | ConvertFrom-Json).env
 
-# Se leen del propio .mcp.json para que script y configuracion no se separen.
-$modelos = @($entorno.SHUNT_MODEL_BULK, $entorno.SHUNT_MODEL_CODE, $entorno.SHUNT_MODEL) |
+# Se leen de la misma configuracion que despliega desplegar.py, para que
+# modelos descargados y configurados no se separen.
+$modelos = @($entorno.SHUNT_MODEL_BULK, $entorno.SHUNT_MODEL_BULK_CODE, $entorno.SHUNT_MODEL_CODE, $entorno.SHUNT_MODEL) |
     Where-Object { $_ } | Select-Object -Unique
 
 if (-not $modelos) {
-    Write-Host "  .mcp.json no declara ningun modelo; nada que descargar" -ForegroundColor Yellow
+    Write-Host "  la configuracion no declara ningun modelo; nada que descargar" -ForegroundColor Yellow
 } else {
     $instalados = (& ollama list) -split "`n" | ForEach-Object { ($_ -split "\s+")[0] }
     foreach ($modelo in $modelos) {
@@ -108,31 +105,15 @@ if (-not $modelos) {
     }
 }
 
-# ----------------------------------- 5. La ruta del servidor, en este equipo
-Write-Host "`n[5/5] Ajustando .mcp.json a este equipo..." -ForegroundColor Cyan
-$rutaServidor = Join-Path $ProjectPath "mcp-server-cheap-worker.py"
-if (-not (Test-Path $rutaServidor)) {
-    Write-Host "ERROR: no se encuentra $rutaServidor" -ForegroundColor Red
-    exit 1
-}
-
-$rutaAnterior = $config.mcpServers.'cheap-worker'.args[0]
-if ($rutaAnterior -eq $rutaServidor) {
-    Write-Host "  la ruta ya era correcta" -ForegroundColor Gray
-} else {
-    $config.mcpServers.'cheap-worker'.args = @($rutaServidor)
-    Write-JsonSinBom -Ruta $Mcp -Objeto $config
-    Write-Host "  antes : $rutaAnterior" -ForegroundColor Gray
-    Write-Host "  ahora : $rutaServidor" -ForegroundColor Green
-}
-
 Write-Host ""
 Write-Host "=== LISTO ===" -ForegroundColor Green
 Write-Host ""
 Write-Host "Proximos pasos:" -ForegroundColor Yellow
-Write-Host "  1. .\start-ollama.ps1       (Terminal 1: levanta el backend)" -ForegroundColor White
-Write-Host "  2. Reinicia Claude Code     (para que lea .mcp.json)" -ForegroundColor White
-Write-Host "  3. .\test-mcp.ps1           (comprueba el ahorro real)" -ForegroundColor White
+Write-Host "  1. .\start-ollama.ps1   (Terminal 1: levanta el backend)" -ForegroundColor White
+Write-Host "  2. Registra el servidor con el ambito que quieras, por ejemplo:" -ForegroundColor White
+Write-Host "       $PythonTexto desplegar.py instalar --ambito usuario" -ForegroundColor White
+Write-Host "     (opciones y como deshabilitarlo: DESPLIEGUE.md)" -ForegroundColor Gray
+Write-Host "  3. Reinicia Claude Code" -ForegroundColor White
 Write-Host ""
 Write-Host "Con el backend levantado, comprueba la ventana con 'ollama ps' (columna" -ForegroundColor Gray
 Write-Host "CONTEXT) y ajusta SHUNT_MAX_CTX_TOKENS a ese valor: quedarse corto" -ForegroundColor Gray
