@@ -36,6 +36,23 @@ class TestUmbralDelHook(unittest.TestCase):
     def test_por_defecto_bloquea_por_encima_de_350(self):
         self.assertEqual(ejecutar(self.leer)[1], "deny")
 
+    def test_bloquea_aunque_la_ruta_lleve_tildes(self):
+        # Claude Code manda el JSON en UTF-8 sin escapar; leido como cp1252 la
+        # ruta no existia y el hook dejaba pasar el archivo largo.
+        directorio = tempfile.mkdtemp(suffix="-Lógica")
+        ruta = os.path.join(directorio, "grande.py")
+        with open(ruta, "w") as f:
+            f.write("x = 1\n" * 400)
+        self.addCleanup(os.rmdir, directorio)
+        self.addCleanup(os.remove, ruta)
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("SHUNT_MIN_LINES", "SHUNT_BLOQUEO", "PYTHONUTF8", "PYTHONIOENCODING")}
+        entrada = {"tool_name": "Read", "tool_input": {"file_path": ruta}}
+        p = subprocess.run([sys.executable, HOOK],
+                           input=json.dumps(entrada, ensure_ascii=False).encode("utf-8"),
+                           capture_output=True, env=env)
+        self.assertEqual(json.loads(p.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+
     def test_respeta_el_umbral_configurado(self):
         self.assertIsNone(ejecutar(self.leer, "500")[1])
 

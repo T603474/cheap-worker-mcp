@@ -81,6 +81,24 @@ class TestArranqueDelServidor(unittest.TestCase):
         self.assertEqual(respuesta["jsonrpc"], "2.0")
         self.assertEqual(respuesta["id"], 5)
 
+    def test_lee_stdin_como_utf8_aunque_windows_diga_cp1252(self):
+        # Claude Code manda el JSON en UTF-8 sin escapar. Leido como cp1252,
+        # "Lógica" llegaba como "LÃ³gica" y ninguna ruta con tilde existia.
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("SHUNT_") and k not in ("PYTHONUTF8", "PYTHONIOENCODING")}
+        mensaje = {"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {
+            "name": "bulk_read",
+            "arguments": {"question": "q", "paths": [os.path.join(RAIZ, "no-existe-Lógica.md")]},
+        }}
+        p = subprocess.run(
+            [sys.executable, SERVIDOR],
+            input=json.dumps(mensaje, ensure_ascii=False).encode("utf-8"),
+            capture_output=True, env=env, cwd=RAIZ,
+        )
+        texto = json.dumps(json.loads(p.stdout), ensure_ascii=False)
+        self.assertIn("no-existe-Lógica.md", texto)
+        self.assertNotIn("Ã", texto)
+
     def test_una_notificacion_no_recibe_respuesta(self):
         codigo, respuesta, stderr = hablar(
             {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}

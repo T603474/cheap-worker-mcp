@@ -170,6 +170,8 @@ def main():
 
     umbral = leer_umbral()
 
+    # Claude Code manda UTF-8; en Windows la tubería se abriría como cp1252.
+    sys.stdin.reconfigure(encoding="utf-8")
     try:
         datos = json.load(sys.stdin)
     except Exception:
