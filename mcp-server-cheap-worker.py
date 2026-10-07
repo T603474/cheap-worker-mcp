@@ -259,6 +259,11 @@ def main():
     if len(sys.argv) > 1:
         sys.exit(run_cli(sys.argv[1:]))
 
+    # MCP habla UTF-8, pero en Windows una tubería se abre con la página de
+    # códigos del sistema (cp1252) y las rutas con tildes llegaban corruptas.
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
+
     try:
         cfg = cheap_worker_core.Config.from_env()
     except cheap_worker_core.ShuntError as e:
