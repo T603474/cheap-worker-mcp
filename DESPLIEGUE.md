@@ -79,6 +79,7 @@ Qué hace el script:
 
 - **Comando del servidor.** Con mise usa `mise.exe exec -- python.exe <ruta>`; sin mise, la ruta absoluta del Python que lo ejecuta. El `.exe` es necesario: los clientes lanzan el servidor sin shell y sin `PATHEXT`, y mise no encontraría `python`.
 - **Ámbitos `usuario` y `local`.** Registra con `claude mcp add`, que debe estar en el PATH.
+- **Timeout de las herramientas.** Pone `MCP_TOOL_TIMEOUT=600000` (10 min) en el `env` del mismo `settings.json` que el hook, también con `--sin-hook`. Sin él, la pestaña Code de la app corta cada llamada a los 60 s con `Request timed out`, y un `bulk_read` de un documento largo con un modelo local tarda más. Si ya había un valor mayor, lo respeta; al desinstalar quita solo el suyo. Desktop no tiene este ajuste.
 - **Resto de archivos.** Los edita conservando todo lo ajeno y deja una copia `.bak` del anterior. Si un archivo no es JSON válido, se detiene sin tocarlo.
 
 Después, **reinicia** la sesión de Claude Code. Con `desktop`, cierra la app del todo, también desde la bandeja del sistema, y ábrela: si estaba abierta al editar el archivo, puede sobrescribirlo al salir.
