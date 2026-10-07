@@ -32,6 +32,12 @@ MARCA_HOOK = "bloquear-lectura-grande.py"
 
 AMBITOS = ("usuario", "proyecto", "local", "desktop")
 
+# Milisegundos que Claude Code espera a una herramienta MCP. Sin esto, la
+# pestaña Code de la app corta a los 60 s ("Request timed out") y un bulk_read
+# con varios trozos en un modelo local tarda minutos. Es el SHUNT_TIMEOUT por
+# defecto (600 s): más no sirve, porque el servidor ya habrá abandonado.
+TIMEOUT_MCP_MS = "600000"
+
 # Nombre del ámbito para `claude mcp --scope`.
 SCOPE_CLI = {"usuario": "user", "local": "local"}
 
@@ -175,6 +181,27 @@ def poner_hook(settings, cfg, lanza=None):
         settings.setdefault("env", {})["SHUNT_MIN_LINES"] = cfg["env"]["SHUNT_MIN_LINES"]
 
 
+def poner_timeout(settings):
+    """Sube MCP_TOOL_TIMEOUT a TIMEOUT_MCP_MS; uno mayor que ya hubiera se respeta."""
+    env = settings.setdefault("env", {})
+    try:
+        if int(env.get("MCP_TOOL_TIMEOUT", 0)) >= int(TIMEOUT_MCP_MS):
+            return
+    except ValueError:
+        pass
+    env["MCP_TOOL_TIMEOUT"] = TIMEOUT_MCP_MS
+
+
+def quitar_timeout(settings):
+    """Quita el timeout solo si es el nuestro. Devuelve si había algo que quitar."""
+    env = settings.get("env") or {}
+    if env.get("MCP_TOOL_TIMEOUT") != TIMEOUT_MCP_MS:
+        return False
+    del env["MCP_TOOL_TIMEOUT"]
+    _podar(settings, "env")
+    return True
+
+
 def deshabilitar(settings, nombre, con_mcpjson):
     """Deniega las herramientas del servidor y apaga el hook, sin desinstalar."""
     permisos = settings.setdefault("permissions", {})
@@ -305,8 +332,10 @@ def ejecutar(accion, ambito, proyecto, home, desktop, cfg, con_hook=True, lanza=
             hecho.append(f"Servidor '{nombre}' registrado con claude mcp add ({donde})")
         if con_hook:
             poner_hook(settings, cfg, lanza)
-            escribir_json(ruta_set, settings)
             hecho.append(f"Hook de bloqueo añadido a {ruta_set}")
+        poner_timeout(settings)
+        escribir_json(ruta_set, settings)
+        hecho.append(f"MCP_TOOL_TIMEOUT={settings['env']['MCP_TOOL_TIMEOUT']} ms en {ruta_set}")
     else:
         if ambito == "proyecto":
             ruta_mcp = os.path.join(proyecto, ".mcp.json")
@@ -324,9 +353,14 @@ def ejecutar(accion, ambito, proyecto, home, desktop, cfg, con_hook=True, lanza=
                                      cwd=proyecto if ambito == "local" else None)
             hecho.append(f"Servidor '{nombre}' {'quitado' if quitado else 'no estaba registrado'} "
                          f"en el ámbito {ambito}")
-        if quitar_hook(settings):
+        quitado_hook = quitar_hook(settings)
+        quitado_timeout = quitar_timeout(settings)
+        if quitado_hook or quitado_timeout:
             escribir_json(ruta_set, settings)
+        if quitado_hook:
             hecho.append(f"Hook de bloqueo quitado de {ruta_set}")
+        if quitado_timeout:
+            hecho.append(f"MCP_TOOL_TIMEOUT quitado de {ruta_set}")
 
     hecho.append("Reinicia la sesión de Claude Code (CLI o pestaña Code de la app) para aplicarlo")
     return hecho

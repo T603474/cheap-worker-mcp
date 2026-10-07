@@ -56,9 +56,25 @@ class TestProyecto(Base):
         settings = self.leer(self.proyecto, ".claude", "settings.json")
         self.assertEqual(len(settings["hooks"]["PreToolUse"]), 1)
 
-    def test_sin_hook_no_toca_settings(self):
+    def test_instalar_sube_el_timeout_de_las_herramientas_mcp(self):
+        # El cliente corta a los 60 s y un modelo local tarda minutos.
+        self.correr("instalar", "proyecto")
+        settings = self.leer(self.proyecto, ".claude", "settings.json")
+        self.assertEqual(settings["env"]["MCP_TOOL_TIMEOUT"], desplegar.TIMEOUT_MCP_MS)
+
+    def test_sin_hook_solo_pone_el_timeout(self):
         self.correr("instalar", "proyecto", con_hook=False)
-        self.assertFalse(os.path.exists(os.path.join(self.proyecto, ".claude", "settings.json")))
+        self.assertEqual(self.leer(self.proyecto, ".claude", "settings.json"),
+                         {"env": {"MCP_TOOL_TIMEOUT": desplegar.TIMEOUT_MCP_MS}})
+
+    def test_respeta_un_timeout_mayor_y_no_lo_quita(self):
+        previo = {"env": {"MCP_TOOL_TIMEOUT": "1800000"}}
+        self.escribir(previo, self.proyecto, ".claude", "settings.json")
+        self.correr("instalar", "proyecto")
+        settings = self.leer(self.proyecto, ".claude", "settings.json")
+        self.assertEqual(settings["env"]["MCP_TOOL_TIMEOUT"], "1800000")
+        self.correr("desinstalar", "proyecto")
+        self.assertEqual(self.leer(self.proyecto, ".claude", "settings.json"), previo)
 
     def test_conserva_lo_ajeno_y_desinstalar_lo_deja_como_estaba(self):
         ajeno_mcp = {"mcpServers": {"otro": {"command": "x"}}}

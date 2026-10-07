@@ -351,6 +351,8 @@ Por eso el hook sigue sin bloquear documentos: para extraer datos de un document
 
 **`no respondió en N s`** — no es la red: el modelo seguía escribiendo. Sube `SHUNT_TIMEOUT` o baja `SHUNT_MAX_OUTPUT_TOKENS`.
 
+**`Request timed out`, sin más** — no lo da el servidor sino el cliente, que dejó de esperar: por defecto corta cada herramienta MCP a los 60 s, y el servidor sigue trabajando por su cuenta. Lo confirma el log `%LOCALAPPDATA%\claude-cli-nodejs\Cache\<proyecto>\mcp-logs-cheap-worker\*.jsonl` con `failed after 60s`. `desplegar.py instalar` pone `MCP_TOOL_TIMEOUT=600000` en `settings.json`; si instalaste antes, vuelve a instalar o añádelo a mano en `env`, y abre una sesión nueva.
+
 **`gastó los N tokens de salida razonando`** — el modelo es de razonamiento. Cámbialo.
 
 **`Valor no numérico en una variable SHUNT_*`** — errata en la sección `env` de `despliegue.json` o de la configuración del cliente.
