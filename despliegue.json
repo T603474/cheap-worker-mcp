@@ -7,7 +7,7 @@
     "SHUNT_MODEL_CODE": "qwen2.5-coder:7b",
     "SHUNT_MAX_CTX_TOKENS": "8192",
     "SHUNT_MAX_OUTPUT_BULK": "512",
-    "SHUNT_MAX_OUTPUT_CODE": "4096",
+    "SHUNT_MAX_OUTPUT_CODE": "2500",
     "SHUNT_MIN_LINES": "350"
   }
 }
